@@ -1,132 +1,239 @@
 import { useMemo, useState } from 'react';
 import {
-  Platform,
+  Pressable,
+  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import { InlineBanner } from './src/components/ui';
 import {
-  FloatingTabs,
-  InlineBanner,
-} from './src/components/ui';
-import { defaultCheckInDraft } from './src/data/mockData';
-import { useTrialData } from './src/hooks/useTrialData';
-import { CheckInScreen } from './src/screens/CheckInScreen';
-import { OverviewScreen } from './src/screens/OverviewScreen';
-import { SignalsScreen } from './src/screens/SignalsScreen';
-import { VisitsScreen } from './src/screens/VisitsScreen';
+  AppCard,
+  Badge,
+  PrimaryButton,
+} from './src/components/studyPulseUi';
+import { useStudyPulseData } from './src/hooks/useStudyPulseData';
+import { ClinicianFlowScreen } from './src/screens/ClinicianFlowScreen';
+import { PatientFlowScreen } from './src/screens/PatientFlowScreen';
 import { colors } from './src/theme/tokens';
 import type {
-  DailyCheckInDraft,
   FeedbackTone,
-  TabKey,
-} from './src/types/trial';
+  StudyPulseRole,
+  StudyPulseSource,
+} from './src/types/studypulse';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
-  const [draft, setDraft] = useState<DailyCheckInDraft>(defaultCheckInDraft);
+  const [role, setRole] =
+    useState<StudyPulseRole>('landing');
   const [feedback, setFeedback] = useState<{
     message: string;
     tone: FeedbackTone;
   } | null>(null);
 
   const {
+    clearPatientSession,
+    createRequest,
+    createStudy,
     data,
     error,
     loading,
-    refreshing,
-    source,
-    submitCheckIn,
-    submitting,
+    patientApplications,
+    patientEmail,
+    patientRequests,
     refresh,
-  } = useTrialData();
+    refreshing,
+    respondToRequest,
+    restoreByEmail,
+    saveNotes,
+    saving,
+    source,
+    submitApplication,
+    updateStatus,
+    scheduleCall,
+  } = useStudyPulseData();
 
-  async function handleSubmitCheckIn() {
-    const result = await submitCheckIn(draft);
-
+  async function withFeedback<T extends { ok: boolean; message: string }>(
+    task: Promise<T>
+  ) {
+    const result = await task;
     setFeedback({
       message: result.message,
       tone: result.ok ? 'success' : 'warning',
     });
-
-    if (result.ok) {
-      setDraft(defaultCheckInDraft);
-      setActiveTab('signals');
-    }
+    return result;
   }
 
-  const screen = useMemo(() => {
-    switch (activeTab) {
-      case 'checkin':
-        return (
-          <CheckInScreen
-            draft={draft}
-            feedback={feedback}
-            onSubmit={handleSubmitCheckIn}
-            recentCheckIn={data?.recentCheckIn ?? null}
-            setDraft={setDraft}
-            source={source}
-            submitting={submitting}
-          />
-        );
-      case 'signals':
-        return (
-          <SignalsScreen
-            data={data}
-            error={error}
-            loading={loading}
-            refreshing={refreshing}
-            source={source}
-            onRefresh={refresh}
-          />
-        );
-      case 'visits':
-        return <VisitsScreen data={data} />;
-      case 'overview':
-      default:
-        return (
-          <OverviewScreen
-            data={data}
-            error={error}
-            loading={loading}
-            refreshing={refreshing}
-            source={source}
-            onRefresh={refresh}
-          />
-        );
+  const shellCopy = useMemo(() => {
+    if (role === 'patient') {
+      return {
+        title: 'Patient Flow',
+        subtitle:
+          'Find a study, apply, respond to requests, and track status.',
+      };
     }
+
+    if (role === 'clinician') {
+      return {
+        title: 'Clinician Flow',
+        subtitle:
+          'Create a study, review applicants, request information, and schedule calls.',
+      };
+    }
+
+    return {
+      title: 'StudyPulse',
+      subtitle:
+        'Clinical trial recruitment with one patient flow and one clinician flow.',
+    };
+  }, [role]);
+
+  const screen = useMemo(() => {
+    if (loading && !data) {
+      return (
+        <View style={styles.loadingState}>
+          <Text style={styles.loadingTitle}>
+            Loading StudyPulse
+          </Text>
+          <Text style={styles.loadingBody}>
+            Pulling studies, applications, and clinic requests.
+          </Text>
+        </View>
+      );
+    }
+
+    if (role === 'patient') {
+      return (
+        <PatientFlowScreen
+          applications={patientApplications}
+          onClearSession={() => {
+            clearPatientSession();
+            setFeedback({
+              message: 'Saved patient session removed.',
+              tone: 'success',
+            });
+          }}
+          onRespondToRequest={(requestId, response) =>
+            withFeedback(
+              respondToRequest(requestId, response)
+            )
+          }
+          onRestoreByEmail={(email) =>
+            withFeedback(restoreByEmail(email))
+          }
+          onSubmitApplication={(draft, studyId, existing) =>
+            withFeedback(
+              submitApplication(draft, studyId, existing)
+            )
+          }
+          patientEmail={patientEmail}
+          requests={patientRequests}
+          saving={saving}
+          studies={data?.studies ?? []}
+        />
+      );
+    }
+
+    if (role === 'clinician') {
+      return (
+        <ClinicianFlowScreen
+          applications={data?.applications ?? []}
+          clinician={data?.clinician ?? null}
+          createRequest={(applicationId, draft) =>
+            withFeedback(
+              createRequest(applicationId, draft)
+            )
+          }
+          createStudy={(draft) =>
+            withFeedback(createStudy(draft))
+          }
+          onRefresh={refresh}
+          refreshing={refreshing}
+          requests={data?.requests ?? []}
+          saveNotes={(applicationId, notes) =>
+            withFeedback(saveNotes(applicationId, notes))
+          }
+          saving={saving}
+          scheduleCall={(applicationId, draft) =>
+            withFeedback(
+              scheduleCall(applicationId, draft)
+            )
+          }
+          studies={data?.studies ?? []}
+          updateStatus={(applicationId, status) =>
+            withFeedback(
+              updateStatus(applicationId, status)
+            )
+          }
+        />
+      );
+    }
+
+    return (
+      <ModeSelectScreen
+        onSelectClinician={() => setRole('clinician')}
+        onSelectPatient={() => setRole('patient')}
+        source={source}
+      />
+    );
   }, [
-    activeTab,
+    clearPatientSession,
+    createRequest,
+    createStudy,
     data,
-    draft,
-    error,
-    feedback,
     loading,
+    patientApplications,
+    patientEmail,
+    patientRequests,
+    refresh,
     refreshing,
+    respondToRequest,
+    restoreByEmail,
+    role,
+    saveNotes,
+    saving,
+    scheduleCall,
     source,
-    submitting,
+    submitApplication,
+    updateStatus,
   ]);
 
   return (
-    <View style={styles.app}>
+    <SafeAreaView style={styles.safe}>
       <StatusBar
         backgroundColor={colors.background}
         barStyle="dark-content"
       />
-      <View style={styles.orbOne} />
-      <View style={styles.orbTwo} />
-      <View style={styles.content}>
+      <View style={styles.root}>
         <View style={styles.header}>
-          <View>
-            <Text style={styles.brand}>StudyPulse</Text>
-            <Text style={styles.brandCaption}>
-              Clinical trial operations, tuned for a smoother participant day.
-            </Text>
-          </View>
-          <View style={styles.brandBadge}>
-            <Text style={styles.brandBadgeText}>Medpace-ready</Text>
+          <View style={styles.headerRow}>
+            <View style={styles.headerCopy}>
+              <Text style={styles.brand}>
+                {shellCopy.title}
+              </Text>
+              <Text style={styles.brandCaption}>
+                {shellCopy.subtitle}
+              </Text>
+            </View>
+
+            <View style={styles.headerActions}>
+              {source === 'supabase' ? (
+                <Badge label="Live" tone="success" />
+              ) : (
+                <Badge label="Demo" tone="warning" />
+              )}
+              {role !== 'landing' ? (
+                <Pressable
+                  onPress={() => setRole('landing')}
+                  style={styles.homeButton}
+                >
+                  <Text style={styles.homeButtonText}>
+                    Home
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           </View>
         </View>
 
@@ -137,85 +244,160 @@ export default function App() {
           />
         ) : null}
 
+        {error ? (
+          <InlineBanner message={error} tone="warning" />
+        ) : null}
+
         <View style={styles.screen}>{screen}</View>
       </View>
+    </SafeAreaView>
+  );
+}
 
-      <FloatingTabs
-        activeTab={activeTab}
-        onChange={setActiveTab}
-      />
+function ModeSelectScreen({
+  onSelectClinician,
+  onSelectPatient,
+  source,
+}: {
+  onSelectClinician: () => void;
+  onSelectPatient: () => void;
+  source: StudyPulseSource;
+}) {
+  return (
+    <View style={styles.modeRoot}>
+      <AppCard style={styles.modeCard}>
+        <Text style={styles.modeTitle}>Patient</Text>
+        <Text style={styles.modeBody}>
+          Browse open studies, apply, answer clinic
+          follow-ups, and track your application status.
+        </Text>
+        <PrimaryButton
+          label="Open patient flow"
+          onPress={onSelectPatient}
+        />
+      </AppCard>
+
+      <AppCard style={styles.modeCard}>
+        <Text style={styles.modeTitle}>Clinician</Text>
+        <Text style={styles.modeBody}>
+          Publish studies, review applicants, request
+          more information, and schedule screening calls.
+        </Text>
+        <PrimaryButton
+          label="Open clinician flow"
+          onPress={onSelectClinician}
+        />
+      </AppCard>
+
+      {source === 'demo' ? (
+        <AppCard style={styles.modeHint}>
+          <Text style={styles.modeHintText}>
+            Supabase is not active right now, so the app is
+            showing local demo data.
+          </Text>
+        </AppCard>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  app: {
+  safe: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  orbOne: {
-    position: 'absolute',
-    top: -120,
-    right: -70,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: '#CDEDF0',
-    opacity: 0.75,
-  },
-  orbTwo: {
-    position: 'absolute',
-    top: 180,
-    left: -95,
-    width: 230,
-    height: 230,
-    borderRadius: 115,
-    backgroundColor: '#DDE8FF',
-    opacity: 0.65,
-  },
-  content: {
+  root: {
     flex: 1,
-    paddingTop:
-      Platform.OS === 'android'
-        ? (StatusBar.currentHeight ?? 0) + 16
-        : 20,
-    paddingHorizontal: 20,
-    paddingBottom: 108,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 18,
+    gap: 12,
   },
   header: {
+    gap: 8,
+  },
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    gap: 16,
-    marginBottom: 18,
+    gap: 12,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  headerActions: {
+    alignItems: 'flex-end',
+    gap: 8,
   },
   brand: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '800',
+    letterSpacing: -0.8,
     color: colors.text,
-    letterSpacing: -0.7,
   },
   brandCaption: {
-    marginTop: 6,
     fontSize: 13,
     lineHeight: 19,
-    color: colors.muted,
-    maxWidth: 240,
+    color: colors.secondaryText,
+    maxWidth: 520,
   },
-  brandBadge: {
+  homeButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: colors.surface,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.line,
+    backgroundColor: '#E9F2F8',
   },
-  brandBadgeText: {
+  homeButtonText: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.primary,
   },
   screen: {
     flex: 1,
+  },
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadingTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  loadingBody: {
+    fontSize: 14,
+    color: colors.secondaryText,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 320,
+  },
+  modeRoot: {
+    flex: 1,
+    gap: 12,
+    justifyContent: 'center',
+  },
+  modeCard: {
+    gap: 12,
+  },
+  modeTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  modeBody: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.secondaryText,
+  },
+  modeHint: {
+    gap: 10,
+  },
+  modeHintText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.secondaryText,
   },
 });
