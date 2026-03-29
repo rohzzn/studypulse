@@ -21,8 +21,21 @@ import type {
   StudyPulseSource,
 } from '../types/studypulse';
 
+const env =
+  (
+    globalThis as {
+      process?: {
+        env?: Record<string, string | undefined>;
+      };
+    }
+  ).process?.env ?? {};
+
 const LOCAL_DB_KEY = 'studypulse:product-db:v2';
 const LOCAL_PATIENT_EMAIL_KEY = 'studypulse:patient-email';
+const defaultAuthRedirectUrl = 'https://studypulse.tech';
+const authRedirectUrl =
+  env.EXPO_PUBLIC_AUTH_REDIRECT_URL?.trim() ||
+  defaultAuthRedirectUrl;
 
 type StudyRow = {
   age_max: number;
@@ -176,6 +189,19 @@ function formatStatusMessage(status: ApplicationStatus) {
     default:
       return 'Updated';
   }
+}
+
+function formatSignUpErrorMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('rate limit') ||
+    normalized.includes('email rate')
+  ) {
+    return 'Supabase email sending is rate limited right now. For the hackathon, disable Confirm email or configure custom SMTP in Supabase Auth, then try again.';
+  }
+
+  return message;
 }
 
 function validateApplicationDraft(
@@ -449,7 +475,7 @@ export async function signInStudyPulseAccount(
   if (error) {
     return {
       ok: false,
-      message: error.message,
+      message: formatSignUpErrorMessage(error.message),
     };
   }
 
@@ -473,6 +499,7 @@ export async function signUpStudyPulseAccount(
     email: draft.email.trim().toLowerCase(),
     password: draft.password,
     options: {
+      emailRedirectTo: authRedirectUrl,
       data: {
         role: draft.role,
         full_name: draft.fullName.trim(),

@@ -84,6 +84,12 @@ type RequestRow = {
   title: string;
 };
 
+const defaultAuthRedirectUrl = 'https://studypulse.tech';
+const authRedirectUrl =
+  (import.meta.env.VITE_AUTH_REDIRECT_URL as
+    | string
+    | undefined)?.trim() || defaultAuthRedirectUrl;
+
 function requireSupabase() {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error(
@@ -92,6 +98,19 @@ function requireSupabase() {
   }
 
   return supabase;
+}
+
+function formatSignUpErrorMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('rate limit') ||
+    normalized.includes('email rate')
+  ) {
+    return 'Supabase email sending is rate limited right now. For the hackathon, disable Confirm email or configure custom SMTP in Supabase Auth, then try again.';
+  }
+
+  return message;
 }
 
 function slugify(value: string) {
@@ -219,6 +238,7 @@ export async function signUp(
     email: input.email.trim().toLowerCase(),
     password: input.password,
     options: {
+      emailRedirectTo: authRedirectUrl,
       data: {
         role: input.role,
         full_name: input.fullName.trim(),
@@ -234,7 +254,7 @@ export async function signUp(
   if (error) {
     return {
       ok: false,
-      message: error.message,
+      message: formatSignUpErrorMessage(error.message),
     };
   }
 
