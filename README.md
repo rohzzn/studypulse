@@ -15,12 +15,23 @@ The product is designed around one core workflow:
 ## Screenshots
 
 <div align="center">
+  <img src="screenshots/1.png" width="45%" />
+  &nbsp;&nbsp;
+  <img src="screenshots/2.png" width="45%" />
+</div>
 
-| | | |
-|:---:|:---:|:---:|
-| <img src="screenshots/1.png" width="220"/> | <img src="screenshots/2.png" width="220"/> | <img src="screenshots/3.png" width="220"/> |
-| <img src="screenshots/4.png" width="220"/> | <img src="screenshots/5.png" width="220"/> | |
+<br/>
 
+<div align="center">
+  <img src="screenshots/3.png" width="45%" />
+  &nbsp;&nbsp;
+  <img src="screenshots/4.png" width="45%" />
+</div>
+
+<br/>
+
+<div align="center">
+  <img src="screenshots/5.png" width="45%" />
 </div>
 
 ## Why StudyPulse
