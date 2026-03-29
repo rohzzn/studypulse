@@ -158,6 +158,11 @@ code {
   color: var(--muted);
 }
 
+.card p,
+.auth-card p {
+  margin: 0;
+}
+
 .portal-hero,
 .auth-shell,
 .layout-grid,
@@ -265,10 +270,14 @@ code {
 .card {
   padding: 20px;
   border-radius: 18px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
 }
 
 .detail-card {
   padding: 22px;
+  gap: 16px;
 }
 
 .subtle-card {
@@ -279,12 +288,12 @@ code {
 .card h3,
 .card h2 {
   color: var(--text);
-  margin-bottom: 6px;
+  margin-bottom: 0;
 }
 
 .card strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 0;
   font-size: 1.9rem;
   color: var(--text);
 }
