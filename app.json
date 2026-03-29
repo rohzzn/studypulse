@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "StudyPulse",
+    "slug": "study-pulse",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "studypulse",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.revuc.studypulse"
+    },
+    "android": {
+      "package": "com.revuc.studypulse"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
