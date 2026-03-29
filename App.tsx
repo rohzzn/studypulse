@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Pressable,
+  Platform,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -87,7 +89,7 @@ export default function App() {
     if (authActive && !session) {
       return {
         title: 'StudyPulse',
-        subtitle: 'Sign in once and use the same account on mobile and web.',
+        subtitle: null,
       };
     }
 
@@ -266,63 +268,71 @@ export default function App() {
         backgroundColor={colors.background}
         barStyle="dark-content"
       />
-      <View style={styles.root}>
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            <View style={styles.headerCopy}>
-              <Text style={styles.brand}>
-                {shellCopy.title}
-              </Text>
-              <Text style={styles.brandCaption}>
-                {shellCopy.subtitle}
-              </Text>
-            </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={10}
+        style={styles.keyboardShell}
+      >
+        <View style={styles.root}>
+          <View style={styles.header}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerCopy}>
+                <Text style={styles.brand}>
+                  {shellCopy.title}
+                </Text>
+                {shellCopy.subtitle ? (
+                  <Text style={styles.brandCaption}>
+                    {shellCopy.subtitle}
+                  </Text>
+                ) : null}
+              </View>
 
-            <View style={styles.headerActions}>
-              {source === 'supabase' ? (
-                <Badge label="Live" tone="success" />
-              ) : (
-                <Badge label="Demo" tone="warning" />
-              )}
-              {authActive && session ? (
-                <Pressable
-                  onPress={() => {
-                    void withFeedback(signOut());
-                  }}
-                  style={styles.homeButton}
-                >
-                  <Text style={styles.homeButtonText}>
-                    Sign out
-                  </Text>
-                </Pressable>
-              ) : null}
-              {!authActive && activeRole !== 'landing' ? (
-                <Pressable
-                  onPress={() => setDemoRole('landing')}
-                  style={styles.homeButton}
-                >
-                  <Text style={styles.homeButtonText}>
-                    Home
-                  </Text>
-                </Pressable>
-              ) : null}
+              <View style={styles.headerActions}>
+                {source === 'supabase' ? (
+                  <Badge label="Live" tone="success" />
+                ) : (
+                  <Badge label="Demo" tone="warning" />
+                )}
+                {authActive && session ? (
+                  <Pressable
+                    onPress={() => {
+                      void withFeedback(signOut());
+                    }}
+                    style={styles.homeButton}
+                  >
+                    <Text style={styles.homeButtonText}>
+                      Sign out
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {!authActive && activeRole !== 'landing' ? (
+                  <Pressable
+                    onPress={() => setDemoRole('landing')}
+                    style={styles.homeButton}
+                  >
+                    <Text style={styles.homeButtonText}>
+                      Home
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           </View>
+
+          {feedback ? (
+            <InlineBanner
+              message={feedback.message}
+              tone={feedback.tone}
+            />
+          ) : null}
+
+          {error ? (
+            <InlineBanner message={error} tone="warning" />
+          ) : null}
+
+          <View style={styles.screen}>{screen}</View>
         </View>
-
-        {feedback ? (
-          <InlineBanner
-            message={feedback.message}
-            tone={feedback.tone}
-          />
-        ) : null}
-
-        {error ? (
-          <InlineBanner message={error} tone="warning" />
-        ) : null}
-
-        <View style={styles.screen}>{screen}</View>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -386,6 +396,9 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     gap: 12,
   },
+  keyboardShell: {
+    flex: 1,
+  },
   header: {
     gap: 8,
   },
@@ -419,12 +432,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#E9F2F8',
+    backgroundColor: '#F0F0F0',
+    borderWidth: 1,
+    borderColor: colors.line,
   },
   homeButtonText: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.text,
   },
   screen: {
     flex: 1,

@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   Pressable,
   StyleSheet,
@@ -8,7 +7,7 @@ import {
 } from 'react-native';
 
 import { AppCard, Badge, ChoiceChip } from './ui';
-import { colors, gradients, radii } from '../theme/tokens';
+import { colors, radii } from '../theme/tokens';
 
 export { AppCard, Badge, ChoiceChip };
 
@@ -25,20 +24,12 @@ export function PrimaryButton({
     <Pressable
       disabled={disabled}
       onPress={onPress}
-      style={styles.buttonWrap}
+      style={[
+        styles.primaryButton,
+        disabled && styles.primaryButtonDisabled,
+      ]}
     >
-      <LinearGradient
-        colors={
-          disabled
-            ? (['#BCC6D0', '#BCC6D0'] as const)
-            : gradients.action
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.primaryButton}
-      >
-        <Text style={styles.primaryButtonText}>{label}</Text>
-      </LinearGradient>
+      <Text style={styles.primaryButtonText}>{label}</Text>
     </Pressable>
   );
 }
@@ -117,7 +108,7 @@ export function Field({
         editable={editable}
         keyboardType={keyboardType}
         placeholder={placeholder}
-        placeholderTextColor="#8FA0B2"
+        placeholderTextColor={colors.muted}
         secureTextEntry={secureTextEntry}
         style={styles.fieldInput}
         value={value}
@@ -144,7 +135,7 @@ export function MultiLineField({
       <TextInput
         multiline
         placeholder={placeholder}
-        placeholderTextColor="#8FA0B2"
+        placeholderTextColor={colors.muted}
         style={styles.multiLineInput}
         textAlignVertical="top"
         value={value}
@@ -155,15 +146,15 @@ export function MultiLineField({
 }
 
 const styles = StyleSheet.create({
-  buttonWrap: {
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
   primaryButton: {
     paddingHorizontal: 18,
     paddingVertical: 15,
     borderRadius: 999,
     alignItems: 'center',
+    backgroundColor: colors.primary,
+  },
+  primaryButtonDisabled: {
+    backgroundColor: '#8C8C8C',
   },
   primaryButtonText: {
     color: '#FFFFFF',
@@ -175,7 +166,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.line,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     paddingHorizontal: 16,
     paddingVertical: 13,
     alignItems: 'center',
@@ -189,7 +180,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#F3F7FA',
+    backgroundColor: '#F2F2F2',
     borderWidth: 1,
     borderColor: colors.line,
   },
@@ -218,7 +209,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.line,
-    backgroundColor: '#F8FBFD',
+    backgroundColor: colors.surface,
     paddingHorizontal: 14,
     paddingVertical: 13,
     color: colors.text,
@@ -229,7 +220,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.line,
-    backgroundColor: '#F8FBFD',
+    backgroundColor: colors.surface,
     paddingHorizontal: 14,
     paddingVertical: 13,
     color: colors.text,

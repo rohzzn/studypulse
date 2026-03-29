@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -58,271 +60,249 @@ export function AuthScreen({
     });
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={12}
+      style={styles.keyboardShell}
     >
-      <AppCard style={styles.heroCard}>
-        <Text style={styles.eyebrow}>StudyPulse</Text>
-        <Text style={styles.heroTitle}>
-          Shared login for mobile and web.
-        </Text>
-        <Text style={styles.heroBody}>
-          Patients can browse studies, apply, and track status.
-          Clinicians can sign in to review applicants and manage studies.
-        </Text>
-      </AppCard>
-
-      <AppCard style={styles.formCard}>
-        {!authConfigured ? (
-          <>
-            <Text style={styles.sectionTitle}>
-              Supabase Auth is not configured
-            </Text>
-            <Text style={styles.bodyText}>
-              Use demo mode for now, or add the Supabase keys
-              first.
-            </Text>
-            <PrimaryButton
-              label="Open demo mode"
-              onPress={onOpenDemo}
-            />
-          </>
-        ) : null}
-
-        {authConfigured ? (
-          <>
-            <View style={styles.modeRow}>
-              <PillButton
-                active={mode === 'signin'}
-                label="Sign in"
-                onPress={() => setMode('signin')}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <AppCard style={styles.formCard}>
+          {!authConfigured ? (
+            <>
+              <Text style={styles.sectionTitle}>
+                Supabase Auth is not configured
+              </Text>
+              <Text style={styles.bodyText}>
+                Use demo mode for now, or add the Supabase keys
+                first.
+              </Text>
+              <PrimaryButton
+                label="Open demo mode"
+                onPress={onOpenDemo}
               />
-              <PillButton
-                active={mode === 'signup'}
-                label="Create account"
-                onPress={() => setMode('signup')}
-              />
-            </View>
+            </>
+          ) : null}
 
-            {mode === 'signin' ? (
-              <View style={styles.formStack}>
-                <Text style={styles.sectionTitle}>
-                  Welcome back
-                </Text>
-                <Field
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  label="Email"
-                  placeholder="you@example.com"
-                  value={signInDraft.email}
-                  onChangeText={(value) =>
-                    setSignInDraft((current) => ({
-                      ...current,
-                      email: value,
-                    }))
-                  }
+          {authConfigured ? (
+            <>
+              <View style={styles.modeRow}>
+                <PillButton
+                  active={mode === 'signin'}
+                  label="Sign in"
+                  onPress={() => setMode('signin')}
                 />
-                <Field
-                  autoCapitalize="none"
-                  label="Password"
-                  placeholder="Enter your password"
-                  secureTextEntry
-                  value={signInDraft.password}
-                  onChangeText={(value) =>
-                    setSignInDraft((current) => ({
-                      ...current,
-                      password: value,
-                    }))
-                  }
-                />
-                <PrimaryButton
-                  disabled={busy}
-                  label={busy ? 'Signing in...' : 'Sign in'}
-                  onPress={() => {
-                    void onSignIn(signInDraft);
-                  }}
+                <PillButton
+                  active={mode === 'signup'}
+                  label="Create account"
+                  onPress={() => setMode('signup')}
                 />
               </View>
-            ) : (
-              <View style={styles.formStack}>
-                <View style={styles.modeRow}>
-                  <PillButton
-                    active={role === 'patient'}
-                    label="Patient"
-                    onPress={() => {
-                      setRole('patient');
-                      setSignUpDraft((current) => ({
+
+              {mode === 'signin' ? (
+                <View style={styles.formStack}>
+                  <Text style={styles.sectionTitle}>
+                    Welcome back
+                  </Text>
+                  <Field
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    label="Email"
+                    placeholder="you@example.com"
+                    value={signInDraft.email}
+                    onChangeText={(value) =>
+                      setSignInDraft((current) => ({
                         ...current,
-                        role: 'patient',
-                      }));
-                    }}
+                        email: value,
+                      }))
+                    }
                   />
-                  <PillButton
-                    active={role === 'clinician'}
-                    label="Clinician"
-                    onPress={() => {
-                      setRole('clinician');
-                      setSignUpDraft((current) => ({
+                  <Field
+                    autoCapitalize="none"
+                    label="Password"
+                    placeholder="Enter your password"
+                    secureTextEntry
+                    value={signInDraft.password}
+                    onChangeText={(value) =>
+                      setSignInDraft((current) => ({
                         ...current,
-                        role: 'clinician',
-                      }));
+                        password: value,
+                      }))
+                    }
+                  />
+                  <PrimaryButton
+                    disabled={busy}
+                    label={busy ? 'Signing in...' : 'Sign in'}
+                    onPress={() => {
+                      void onSignIn(signInDraft);
                     }}
                   />
                 </View>
-
-                <Text style={styles.sectionTitle}>
-                  Create your account
-                </Text>
-                <Field
-                  label="Full name"
-                  placeholder="Jamie Brooks"
-                  value={signUpDraft.fullName}
-                  onChangeText={(value) =>
-                    setSignUpDraft((current) => ({
-                      ...current,
-                      fullName: value,
-                    }))
-                  }
-                />
-                <Field
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  label="Email"
-                  placeholder="you@example.com"
-                  value={signUpDraft.email}
-                  onChangeText={(value) =>
-                    setSignUpDraft((current) => ({
-                      ...current,
-                      email: value,
-                    }))
-                  }
-                />
-                <Field
-                  autoCapitalize="none"
-                  label="Password"
-                  placeholder="Create a password"
-                  secureTextEntry
-                  value={signUpDraft.password}
-                  onChangeText={(value) =>
-                    setSignUpDraft((current) => ({
-                      ...current,
-                      password: value,
-                    }))
-                  }
-                />
-                <Field
-                  keyboardType="phone-pad"
-                  label="Phone"
-                  placeholder="(555) 555-5555"
-                  value={signUpDraft.phone}
-                  onChangeText={(value) =>
-                    setSignUpDraft((current) => ({
-                      ...current,
-                      phone: value,
-                    }))
-                  }
-                />
-                <Field
-                  label="City"
-                  placeholder="Cincinnati"
-                  value={signUpDraft.city}
-                  onChangeText={(value) =>
-                    setSignUpDraft((current) => ({
-                      ...current,
-                      city: value,
-                    }))
-                  }
-                />
-                <Field
-                  autoCapitalize="characters"
-                  label="State"
-                  placeholder="OH"
-                  value={signUpDraft.state}
-                  onChangeText={(value) =>
-                    setSignUpDraft((current) => ({
-                      ...current,
-                      state: value,
-                    }))
-                  }
-                />
-                {role === 'clinician' ? (
-                  <>
-                    <Field
-                      label="Title"
-                      placeholder="Clinical Research Coordinator"
-                      value={signUpDraft.title}
-                      onChangeText={(value) =>
+              ) : (
+                <View style={styles.formStack}>
+                  <View style={styles.modeRow}>
+                    <PillButton
+                      active={role === 'patient'}
+                      label="Patient"
+                      onPress={() => {
+                        setRole('patient');
                         setSignUpDraft((current) => ({
                           ...current,
-                          title: value,
-                        }))
-                      }
+                          role: 'patient',
+                        }));
+                      }}
                     />
-                    <Field
-                      label="Site name"
-                      placeholder="StudyPulse Research Network"
-                      value={signUpDraft.siteName}
-                      onChangeText={(value) =>
+                    <PillButton
+                      active={role === 'clinician'}
+                      label="Clinician"
+                      onPress={() => {
+                        setRole('clinician');
                         setSignUpDraft((current) => ({
                           ...current,
-                          siteName: value,
-                        }))
-                      }
+                          role: 'clinician',
+                        }));
+                      }}
                     />
-                  </>
-                ) : null}
-                <PrimaryButton
-                  disabled={busy}
-                  label={busy ? 'Creating...' : 'Create account'}
-                  onPress={() => {
-                    void onSignUp(signUpDraft);
-                  }}
-                />
-              </View>
-            )}
+                  </View>
 
-            <SecondaryButton
-              label="Open demo mode"
-              onPress={onOpenDemo}
-            />
-          </>
-        ) : null}
-      </AppCard>
-    </ScrollView>
+                  <Text style={styles.sectionTitle}>
+                    Create your account
+                  </Text>
+                  <Field
+                    label="Full name"
+                    placeholder="Jamie Brooks"
+                    value={signUpDraft.fullName}
+                    onChangeText={(value) =>
+                      setSignUpDraft((current) => ({
+                        ...current,
+                        fullName: value,
+                      }))
+                    }
+                  />
+                  <Field
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    label="Email"
+                    placeholder="you@example.com"
+                    value={signUpDraft.email}
+                    onChangeText={(value) =>
+                      setSignUpDraft((current) => ({
+                        ...current,
+                        email: value,
+                      }))
+                    }
+                  />
+                  <Field
+                    autoCapitalize="none"
+                    label="Password"
+                    placeholder="Create a password"
+                    secureTextEntry
+                    value={signUpDraft.password}
+                    onChangeText={(value) =>
+                      setSignUpDraft((current) => ({
+                        ...current,
+                        password: value,
+                      }))
+                    }
+                  />
+                  <Field
+                    keyboardType="phone-pad"
+                    label="Phone"
+                    placeholder="(555) 555-5555"
+                    value={signUpDraft.phone}
+                    onChangeText={(value) =>
+                      setSignUpDraft((current) => ({
+                        ...current,
+                        phone: value,
+                      }))
+                    }
+                  />
+                  <Field
+                    label="City"
+                    placeholder="Cincinnati"
+                    value={signUpDraft.city}
+                    onChangeText={(value) =>
+                      setSignUpDraft((current) => ({
+                        ...current,
+                        city: value,
+                      }))
+                    }
+                  />
+                  <Field
+                    autoCapitalize="characters"
+                    label="State"
+                    placeholder="OH"
+                    value={signUpDraft.state}
+                    onChangeText={(value) =>
+                      setSignUpDraft((current) => ({
+                        ...current,
+                        state: value,
+                      }))
+                    }
+                  />
+                  {role === 'clinician' ? (
+                    <>
+                      <Field
+                        label="Title"
+                        placeholder="Clinical Research Coordinator"
+                        value={signUpDraft.title}
+                        onChangeText={(value) =>
+                          setSignUpDraft((current) => ({
+                            ...current,
+                            title: value,
+                          }))
+                        }
+                      />
+                      <Field
+                        label="Site name"
+                        placeholder="StudyPulse Research Network"
+                        value={signUpDraft.siteName}
+                        onChangeText={(value) =>
+                          setSignUpDraft((current) => ({
+                            ...current,
+                            siteName: value,
+                          }))
+                        }
+                      />
+                    </>
+                  ) : null}
+                  <PrimaryButton
+                    disabled={busy}
+                    label={busy ? 'Creating...' : 'Create account'}
+                    onPress={() => {
+                      void onSignUp(signUpDraft);
+                    }}
+                  />
+                </View>
+              )}
+
+              <SecondaryButton
+                label="Open demo mode"
+                onPress={onOpenDemo}
+              />
+            </>
+          ) : null}
+        </AppCard>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    gap: 12,
-    justifyContent: 'center',
-    paddingBottom: 28,
+  keyboardShell: {
+    flex: 1,
   },
-  heroCard: {
-    gap: 10,
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingBottom: 36,
   },
   formCard: {
     gap: 14,
-  },
-  eyebrow: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    color: colors.primary,
-  },
-  heroTitle: {
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: '800',
-    color: colors.text,
-    letterSpacing: -0.7,
-  },
-  heroBody: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: colors.secondaryText,
   },
   modeRow: {
     flexDirection: 'row',

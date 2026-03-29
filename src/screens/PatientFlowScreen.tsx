@@ -1314,7 +1314,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E0E8EE',
+    borderBottomColor: colors.line,
   },
   timelineTitle: {
     fontSize: 14,
@@ -1322,6 +1322,6 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   responseCard: {
-    backgroundColor: '#F4FAF7',
+    backgroundColor: '#F3F3F3',
   },
 });

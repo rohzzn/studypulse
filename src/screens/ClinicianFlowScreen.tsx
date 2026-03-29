@@ -1395,7 +1395,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E0E8EE',
+    borderBottomColor: colors.line,
   },
   timelineTitle: {
     fontSize: 14,

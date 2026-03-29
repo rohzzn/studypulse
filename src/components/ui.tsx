@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import type { PropsWithChildren } from 'react';
 import {
   Pressable,
@@ -9,7 +8,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { colors, gradients, radii, shadow } from '../theme/tokens';
+import { colors, radii, shadow } from '../theme/tokens';
 import type {
   FeedbackTone,
   MetricTone,
@@ -206,20 +205,12 @@ export function ActionButton({
     <Pressable
       disabled={disabled}
       onPress={onPress}
-      style={styles.actionButtonWrap}
+      style={[
+        styles.actionButton,
+        disabled && styles.actionButtonDisabled,
+      ]}
     >
-      <LinearGradient
-        colors={
-          disabled
-            ? (['#B7C0CC', '#B7C0CC'] as const)
-            : gradients.action
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.actionButton}
-      >
-        <Text style={styles.actionButtonText}>{label}</Text>
-      </LinearGradient>
+      <Text style={styles.actionButtonText}>{label}</Text>
     </Pressable>
   );
 }
@@ -310,19 +301,19 @@ const styles = StyleSheet.create({
   },
   badge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#F2F6FA',
+    backgroundColor: '#F2F2F2',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   badgeAccent: {
-    backgroundColor: '#E3F5F5',
+    backgroundColor: '#EBEBEB',
   },
   badgeSuccess: {
-    backgroundColor: '#E4F7EC',
+    backgroundColor: '#EBEBEB',
   },
   badgeWarning: {
-    backgroundColor: '#FFF4DD',
+    backgroundColor: '#EBEBEB',
   },
   badgeText: {
     fontSize: 11,
@@ -331,13 +322,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   badgeAccentText: {
-    color: colors.primary,
+    color: colors.text,
   },
   badgeSuccessText: {
-    color: colors.successText,
+    color: colors.text,
   },
   badgeWarningText: {
-    color: colors.warningText,
+    color: colors.text,
   },
   metricTile: {
     flexBasis: '48%',
@@ -347,16 +338,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   metricTileBlue: {
-    backgroundColor: '#EAF1FF',
+    backgroundColor: '#F3F3F3',
   },
   metricTileMint: {
-    backgroundColor: '#E5F6F3',
+    backgroundColor: '#F3F3F3',
   },
   metricTileAmber: {
-    backgroundColor: '#FFF3E0',
+    backgroundColor: '#F3F3F3',
   },
   metricTileRose: {
-    backgroundColor: '#FBEAEC',
+    backgroundColor: '#F3F3F3',
   },
   metricLabel: {
     fontSize: 12,
@@ -377,7 +368,7 @@ const styles = StyleSheet.create({
   choiceChip: {
     borderWidth: 1,
     borderColor: colors.line,
-    backgroundColor: '#F8FBFD',
+    backgroundColor: colors.surface,
     paddingHorizontal: 14,
     paddingVertical: 11,
     borderRadius: 999,
@@ -422,17 +413,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#EEF5FA',
+    backgroundColor: '#F2F2F2',
   },
   sectionActionText: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.text,
   },
   progressTrack: {
     height: 10,
     borderRadius: 999,
-    backgroundColor: '#D8E6EE',
+    backgroundColor: '#E5E5E5',
     overflow: 'hidden',
   },
   progressFill: {
@@ -440,16 +431,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.accent,
   },
-  actionButtonWrap: {
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
   actionButton: {
     paddingVertical: 16,
     paddingHorizontal: 18,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  actionButtonDisabled: {
+    backgroundColor: '#8C8C8C',
   },
   actionButtonText: {
     color: '#FFFFFF',
@@ -465,12 +456,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   bannerSuccess: {
-    backgroundColor: '#EAF8F0',
-    borderColor: '#B7E4C7',
+    backgroundColor: '#F3F3F3',
+    borderColor: colors.line,
   },
   bannerWarning: {
-    backgroundColor: '#FFF6E6',
-    borderColor: '#FFD58A',
+    backgroundColor: '#F3F3F3',
+    borderColor: colors.line,
   },
   bannerText: {
     fontSize: 13,
@@ -478,10 +469,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   bannerSuccessText: {
-    color: colors.successText,
+    color: colors.text,
   },
   bannerWarningText: {
-    color: colors.warningText,
+    color: colors.text,
   },
   tabsShell: {
     position: 'absolute',
@@ -505,14 +496,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tabButtonActive: {
-    backgroundColor: '#E8F4FA',
+    backgroundColor: '#F2F2F2',
   },
   tabMarker: {
     minWidth: 34,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: '#F1F5F8',
+    backgroundColor: '#F2F2F2',
     alignItems: 'center',
   },
   tabMarkerActive: {
@@ -533,6 +524,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   tabLabelActive: {
-    color: colors.primary,
+    color: colors.text,
   },
 });
