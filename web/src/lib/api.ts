@@ -425,6 +425,13 @@ export async function createPatientApplication(
     };
   }
 
+  if (trimmedAge < 18 || trimmedAge > 120) {
+    return {
+      ok: false,
+      message: 'Enter a valid age between 18 and 120.',
+    };
+  }
+
   const payload = {
     study_id: studyId,
     auth_user_id: session.user.id,

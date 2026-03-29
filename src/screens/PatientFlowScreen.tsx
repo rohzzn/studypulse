@@ -119,6 +119,8 @@ export function PatientFlowScreen({
   const [requestResponses, setRequestResponses] = useState<
     Record<string, string>
   >({});
+  const [applicationFeedback, setApplicationFeedback] =
+    useState<string | null>(null);
   const studyVoiceInput = useElevenLabsVoiceInput();
 
   useEffect(() => {
@@ -247,6 +249,7 @@ export function PatientFlowScreen({
     setSelectedStudyId(studyId);
     setEditingApplicationId(existing?.id ?? null);
     setSubmittedApplicationId(null);
+    setApplicationFeedback(null);
     setApplicationStep(0);
     setStudyView('apply');
     setDraft(
@@ -272,6 +275,7 @@ export function PatientFlowScreen({
       return;
     }
 
+    setApplicationFeedback(null);
     const existing = applications.find(
       (application) => application.id === editingApplicationId
     );
@@ -282,6 +286,7 @@ export function PatientFlowScreen({
     );
 
     if (!result.ok) {
+      setApplicationFeedback(result.message);
       return;
     }
 
@@ -409,8 +414,14 @@ export function PatientFlowScreen({
 
               setStudyView('detail');
               setEditingApplicationId(null);
+              setApplicationFeedback(null);
             }}
-            onChange={setDraft}
+            onChange={(nextDraft) => {
+              setDraft(nextDraft);
+              if (applicationFeedback) {
+                setApplicationFeedback(null);
+              }
+            }}
             onNext={() =>
               setApplicationStep((current) =>
                 Math.min(2, current + 1)
@@ -419,6 +430,7 @@ export function PatientFlowScreen({
             onSelectStep={setApplicationStep}
             onSubmit={handleSubmitApplication}
             saving={saving}
+            submitFeedback={applicationFeedback}
             step={applicationStep}
             study={selectedStudy}
           />
@@ -571,6 +583,7 @@ export function PatientFlowScreen({
     selectedStudy,
     selectedStudyMatch,
     studies,
+    applicationFeedback,
     studyMatchMap,
     studyMatchQuery,
     studyMatchSource,
@@ -847,6 +860,7 @@ function ApplicationFormView({
   onSelectStep,
   onSubmit,
   saving,
+  submitFeedback,
   step,
   study,
 }: {
@@ -857,6 +871,7 @@ function ApplicationFormView({
   onSelectStep: (step: number) => void;
   onSubmit: () => void;
   saving: boolean;
+  submitFeedback: string | null;
   step: number;
   study: StudyProgram;
 }) {
@@ -985,6 +1000,9 @@ function ApplicationFormView({
               }
             />
           </View>
+        ) : null}
+        {submitFeedback ? (
+          <Text style={styles.requirementText}>{submitFeedback}</Text>
         ) : null}
       </AppCard>
       <View style={styles.actionRow}>

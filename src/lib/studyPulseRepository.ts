@@ -624,10 +624,23 @@ export async function savePatientApplication(
   studyId: string,
   existing?: PatientApplication
 ): Promise<ActionResult> {
+  const normalizedAge = Number(draft.age.trim());
+
   if (!validateApplicationDraft(draft)) {
     return {
       ok: false,
       message: 'Complete the application before submitting it.',
+    };
+  }
+
+  if (
+    Number.isNaN(normalizedAge) ||
+    normalizedAge < 18 ||
+    normalizedAge > 120
+  ) {
+    return {
+      ok: false,
+      message: 'Enter a valid age between 18 and 120.',
     };
   }
 

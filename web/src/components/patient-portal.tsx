@@ -73,6 +73,8 @@ export function PatientPortal({
     useState<string | null>(applications[0]?.id ?? null);
   const [submittedStudyId, setSubmittedStudyId] =
     useState<string | null>(null);
+  const [applicationFeedback, setApplicationFeedback] =
+    useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<ApplicationDraft>({
     ...defaultApplicationDraft,
@@ -217,6 +219,7 @@ export function PatientPortal({
     setStep(0);
     setStudyView('apply');
     setSubmittedStudyId(null);
+    setApplicationFeedback(null);
   }
 
   async function handleSubmit() {
@@ -224,12 +227,14 @@ export function PatientPortal({
       return;
     }
 
+    setApplicationFeedback(null);
     const result = await onSubmitApplication(
       selectedStudyId,
       draft
     );
 
     if (!result.ok) {
+      setApplicationFeedback(result.message);
       return;
     }
 
@@ -360,9 +365,15 @@ export function PatientPortal({
         onBackToList={() => {
           setStudyView('list');
           setSubmittedStudyId(null);
+          setApplicationFeedback(null);
         }}
         onOpenApplications={() => setTab('applications')}
-        onChangeDraft={setDraft}
+        onChangeDraft={(nextDraft) => {
+          setDraft(nextDraft);
+          if (applicationFeedback) {
+            setApplicationFeedback(null);
+          }
+        }}
         onOpenStudy={(studyId) => {
           setSelectedStudyId(studyId);
           setStudyView('detail');
@@ -377,6 +388,7 @@ export function PatientPortal({
         studies={visibleStudies}
         studyMatches={studyMatchMap}
         studyView={studyView}
+        submitFeedback={applicationFeedback}
         voiceBusy={studyVoiceInput.busy}
         voiceError={studyVoiceInput.error}
         voiceRecording={studyVoiceInput.isRecording}
@@ -397,6 +409,7 @@ export function PatientPortal({
     selectedStudy,
     selectedStudyMatch,
     step,
+    applicationFeedback,
     studyMatchMap,
     studyMatchQuery,
     studyMatchSource,
@@ -481,6 +494,7 @@ function StudiesPanel({
   studies,
   studyMatches,
   studyView,
+  submitFeedback,
   voiceBusy,
   voiceError,
   voiceRecording,
@@ -508,6 +522,7 @@ function StudiesPanel({
   studies: StudyProgram[];
   studyMatches: Map<string, StudyMatchResult>;
   studyView: StudyView;
+  submitFeedback: string | null;
   voiceBusy: boolean;
   voiceError: string | null;
   voiceRecording: boolean;
@@ -806,6 +821,10 @@ function StudiesPanel({
                   }
                 />
               </div>
+            ) : null}
+
+            {submitFeedback ? (
+              <p className="muted">{submitFeedback}</p>
             ) : null}
 
             <div className="button-row">
