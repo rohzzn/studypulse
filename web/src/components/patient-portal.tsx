@@ -14,6 +14,7 @@ import {
   Pill,
   TextArea,
 } from './ui';
+import { useElevenLabsVoiceInput } from '../hooks/use-elevenlabs-voice-input';
 import { matchStudiesWithGemini } from '../lib/gemini-study-matcher';
 import {
   defaultApplicationDraft,
@@ -89,6 +90,7 @@ export function PatientPortal({
     'gemini' | 'local' | null
   >(null);
   const [matchingStudies, setMatchingStudies] = useState(false);
+  const studyVoiceInput = useElevenLabsVoiceInput();
 
   useEffect(() => {
     if (!selectedStudyId && studies[0]) {
@@ -235,6 +237,27 @@ export function PatientPortal({
     setStudyMatchQuery('');
     setStudyMatches([]);
     setStudyMatchSource(null);
+    studyVoiceInput.clearError();
+  }
+
+  async function handleStudyVoiceInput() {
+    if (studyVoiceInput.busy) {
+      return;
+    }
+
+    if (studyVoiceInput.isRecording) {
+      const result = await studyVoiceInput.stopRecording();
+
+      if (result.ok) {
+        setStudyMatchQuery((current) =>
+          mergeVoiceTranscript(current, result.transcript)
+        );
+      }
+
+      return;
+    }
+
+    await studyVoiceInput.startRecording();
   }
 
   const screen = useMemo(() => {
@@ -292,6 +315,9 @@ export function PatientPortal({
         matchSource={studyMatchSource}
         onChangeMatchQuery={setStudyMatchQuery}
         onClearMatch={clearStudyMatch}
+        onToggleVoiceInput={async () => {
+          await handleStudyVoiceInput();
+        }}
         onApply={() => setStudyView('apply')}
         onBackToList={() => setStudyView('list')}
         onChangeDraft={setDraft}
@@ -308,6 +334,10 @@ export function PatientPortal({
         studies={visibleStudies}
         studyMatches={studyMatchMap}
         studyView={studyView}
+        voiceBusy={studyVoiceInput.busy}
+        voiceError={studyVoiceInput.error}
+        voiceRecording={studyVoiceInput.isRecording}
+        voiceStatus={studyVoiceInput.statusText}
       />
     );
   }, [
@@ -327,6 +357,10 @@ export function PatientPortal({
     studyMatchMap,
     studyMatchQuery,
     studyMatchSource,
+    studyVoiceInput.busy,
+    studyVoiceInput.error,
+    studyVoiceInput.isRecording,
+    studyVoiceInput.statusText,
     visibleStudies,
     studyView,
     tab,
@@ -389,6 +423,7 @@ function StudiesPanel({
   matchSource,
   onChangeMatchQuery,
   onClearMatch,
+  onToggleVoiceInput,
   onApply,
   onBackToList,
   onChangeDraft,
@@ -402,6 +437,10 @@ function StudiesPanel({
   studies,
   studyMatches,
   studyView,
+  voiceBusy,
+  voiceError,
+  voiceRecording,
+  voiceStatus,
 }: {
   busy: boolean;
   draft: ApplicationDraft;
@@ -410,6 +449,7 @@ function StudiesPanel({
   matchSource: 'gemini' | 'local' | null;
   onChangeMatchQuery: (value: string) => void;
   onClearMatch: () => void;
+  onToggleVoiceInput: () => Promise<void>;
   onApply: () => void;
   onBackToList: () => void;
   onChangeDraft: (draft: ApplicationDraft) => void;
@@ -423,6 +463,10 @@ function StudiesPanel({
   studies: StudyProgram[];
   studyMatches: Map<string, StudyMatchResult>;
   studyView: StudyView;
+  voiceBusy: boolean;
+  voiceError: string | null;
+  voiceRecording: boolean;
+  voiceStatus: string | null;
 }) {
   const steps = ['Basic', 'Health', 'Availability'];
 
@@ -445,6 +489,17 @@ function StudiesPanel({
           />
           <div className="button-row">
             <Button
+              disabled={matchingStudies || voiceBusy}
+              variant="secondary"
+              onClick={() => void onToggleVoiceInput()}
+            >
+              {voiceBusy
+                ? 'Transcribing...'
+                : voiceRecording
+                  ? 'Stop recording'
+                  : 'Use mic'}
+            </Button>
+            <Button
               disabled={matchingStudies}
               onClick={() => void onRunMatch()}
             >
@@ -458,6 +513,10 @@ function StudiesPanel({
               </Button>
             ) : null}
           </div>
+          {voiceStatus ? (
+            <p className="muted">{voiceStatus}</p>
+          ) : null}
+          {voiceError ? <p className="muted">{voiceError}</p> : null}
           {matchSource ? (
             <p className="muted">
               Showing ranked matches from{' '}
@@ -1040,6 +1099,24 @@ function prettyMatchStatus(status: StudyMatchResult['status']) {
     default:
       return 'Not a fit';
   }
+}
+
+function mergeVoiceTranscript(
+  currentValue: string,
+  transcript: string
+) {
+  const trimmedCurrent = currentValue.trim();
+  const trimmedTranscript = transcript.trim();
+
+  if (!trimmedCurrent) {
+    return trimmedTranscript;
+  }
+
+  if (!trimmedTranscript) {
+    return trimmedCurrent;
+  }
+
+  return `${trimmedCurrent} ${trimmedTranscript}`;
 }
 
 function formatDate(value: string) {

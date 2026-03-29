@@ -22,6 +22,7 @@ import {
   SecondaryButton,
 } from '../components/studyPulseUi';
 import { defaultApplicationDraft } from '../data/studypulseMockData';
+import { useElevenLabsVoiceInput } from '../hooks/useElevenLabsVoiceInput';
 import { matchStudiesWithGemini } from '../lib/geminiStudyMatcher';
 import { colors } from '../theme/tokens';
 import type {
@@ -118,6 +119,7 @@ export function PatientFlowScreen({
   const [requestResponses, setRequestResponses] = useState<
     Record<string, string>
   >({});
+  const studyVoiceInput = useElevenLabsVoiceInput();
 
   useEffect(() => {
     const firstStudy = studies[0];
@@ -351,10 +353,31 @@ export function PatientFlowScreen({
     }
   }
 
+  async function handleStudyVoiceInput() {
+    if (studyVoiceInput.busy) {
+      return;
+    }
+
+    if (studyVoiceInput.isRecording) {
+      const result = await studyVoiceInput.stopRecording();
+
+      if (result.ok) {
+        setStudyMatchQuery((current) =>
+          mergeVoiceTranscript(current, result.transcript)
+        );
+      }
+
+      return;
+    }
+
+    await studyVoiceInput.startRecording();
+  }
+
   function clearStudyMatches() {
     setStudyMatchQuery('');
     setStudyMatches([]);
     setStudyMatchSource(null);
+    studyVoiceInput.clearError();
   }
 
   const content = useMemo(() => {
@@ -434,6 +457,13 @@ export function PatientFlowScreen({
           onChangeMatchQuery={setStudyMatchQuery}
           onClearMatch={clearStudyMatches}
           onRunMatch={handleMatchStudies}
+          onToggleVoiceInput={() => {
+            void handleStudyVoiceInput();
+          }}
+          voiceBusy={studyVoiceInput.busy}
+          voiceError={studyVoiceInput.error}
+          voiceRecording={studyVoiceInput.isRecording}
+          voiceStatus={studyVoiceInput.statusText}
           studyMatches={studyMatchMap}
           studies={visibleStudies}
           onApply={(studyId) => startApply(studyId)}
@@ -540,6 +570,10 @@ export function PatientFlowScreen({
     studyMatchMap,
     studyMatchQuery,
     studyMatchSource,
+    studyVoiceInput.busy,
+    studyVoiceInput.error,
+    studyVoiceInput.isRecording,
+    studyVoiceInput.statusText,
     visibleStudies,
     studyView,
     submittedApplicationId,
@@ -592,8 +626,13 @@ function StudyListView({
   onChangeMatchQuery,
   onClearMatch,
   onRunMatch,
+  onToggleVoiceInput,
   studyMatches,
   studies,
+  voiceBusy,
+  voiceError,
+  voiceRecording,
+  voiceStatus,
   onApply,
   onOpenStudy,
 }: {
@@ -603,8 +642,13 @@ function StudyListView({
   onChangeMatchQuery: (value: string) => void;
   onClearMatch: () => void;
   onRunMatch: () => void;
+  onToggleVoiceInput: () => void;
   studies: StudyProgram[];
   studyMatches: Map<string, StudyMatchResult>;
+  voiceBusy: boolean;
+  voiceError: string | null;
+  voiceRecording: boolean;
+  voiceStatus: string | null;
   onApply: (studyId: string) => void;
   onOpenStudy: (studyId: string) => void;
 }) {
@@ -625,6 +669,23 @@ function StudyListView({
           value={matchQuery}
           onChangeText={onChangeMatchQuery}
         />
+        <SecondaryButton
+          disabled={matchingStudies || voiceBusy}
+          label={
+            voiceBusy
+              ? 'Transcribing...'
+              : voiceRecording
+                ? 'Stop recording'
+                : 'Use mic'
+          }
+          onPress={onToggleVoiceInput}
+        />
+        {voiceStatus ? (
+          <Text style={styles.requirementText}>{voiceStatus}</Text>
+        ) : null}
+        {voiceError ? (
+          <Text style={styles.requirementText}>{voiceError}</Text>
+        ) : null}
         <PrimaryButton
           disabled={matchingStudies}
           label={
@@ -1479,6 +1540,24 @@ function buildDefaultDraft(
     phone: accountProfile?.phone ?? '',
     email: patientEmail ?? accountProfile?.email ?? '',
   };
+}
+
+function mergeVoiceTranscript(
+  currentValue: string,
+  transcript: string
+) {
+  const trimmedCurrent = currentValue.trim();
+  const trimmedTranscript = transcript.trim();
+
+  if (!trimmedCurrent) {
+    return trimmedTranscript;
+  }
+
+  if (!trimmedTranscript) {
+    return trimmedCurrent;
+  }
+
+  return `${trimmedCurrent} ${trimmedTranscript}`;
 }
 
 const styles = StyleSheet.create({

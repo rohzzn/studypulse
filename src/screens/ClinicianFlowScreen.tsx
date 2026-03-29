@@ -15,6 +15,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from '../components/studyPulseUi';
+import { useElevenLabsVoiceInput } from '../hooks/useElevenLabsVoiceInput';
 import { matchApplicantsWithGemini } from '../lib/geminiApplicantMatcher';
 import {
   defaultClinicianRequestDraft,
@@ -121,6 +122,7 @@ export function ClinicianFlowScreen({
     useState(false);
   const [likelyEligibleOnly, setLikelyEligibleOnly] =
     useState(false);
+  const applicantVoiceInput = useElevenLabsVoiceInput();
 
   useEffect(() => {
     const firstStudy = studies[0];
@@ -367,10 +369,31 @@ export function ClinicianFlowScreen({
     }
   }
 
+  async function handleApplicantVoiceInput() {
+    if (applicantVoiceInput.busy) {
+      return;
+    }
+
+    if (applicantVoiceInput.isRecording) {
+      const result = await applicantVoiceInput.stopRecording();
+
+      if (result.ok) {
+        setApplicantMatchQuery((current) =>
+          mergeVoiceTranscript(current, result.transcript)
+        );
+      }
+
+      return;
+    }
+
+    await applicantVoiceInput.startRecording();
+  }
+
   function clearApplicantMatch() {
     setApplicantMatchQuery('');
     setApplicantMatches([]);
     setApplicantMatchSource(null);
+    applicantVoiceInput.clearError();
   }
 
   const content = useMemo(() => {
@@ -492,6 +515,9 @@ export function ClinicianFlowScreen({
         onRunMatch={() => {
           void handleApplicantMatch();
         }}
+        onToggleVoiceInput={() => {
+          void handleApplicantVoiceInput();
+        }}
         onToggleLikelyEligible={() =>
           setLikelyEligibleOnly((current) => !current)
         }
@@ -505,6 +531,10 @@ export function ClinicianFlowScreen({
         statusFilter={statusFilter}
         studies={studies}
         studyFilter={studyFilter}
+        voiceBusy={applicantVoiceInput.busy}
+        voiceError={applicantVoiceInput.error}
+        voiceRecording={applicantVoiceInput.isRecording}
+        voiceStatus={applicantVoiceInput.statusText}
       />
     );
   }, [
@@ -536,6 +566,10 @@ export function ClinicianFlowScreen({
     studyDraft,
     studyFilter,
     studyView,
+    applicantVoiceInput.busy,
+    applicantVoiceInput.error,
+    applicantVoiceInput.isRecording,
+    applicantVoiceInput.statusText,
   ]);
 
   return (
@@ -987,6 +1021,7 @@ function ApplicantsListView({
   onClearMatch,
   onOpenApplicant,
   onRunMatch,
+  onToggleVoiceInput,
   onToggleLikelyEligible,
   onToggleMissingInfo,
   searchTerm,
@@ -996,6 +1031,10 @@ function ApplicantsListView({
   statusFilter,
   studies,
   studyFilter,
+  voiceBusy,
+  voiceError,
+  voiceRecording,
+  voiceStatus,
 }: {
   applications: PatientApplication[];
   applicantMatchQuery: string;
@@ -1008,6 +1047,7 @@ function ApplicantsListView({
   onClearMatch: () => void;
   onOpenApplicant: (applicationId: string) => void;
   onRunMatch: () => void;
+  onToggleVoiceInput: () => void;
   onToggleLikelyEligible: () => void;
   onToggleMissingInfo: () => void;
   searchTerm: string;
@@ -1019,6 +1059,10 @@ function ApplicantsListView({
   statusFilter: 'all' | ApplicationStatus;
   studies: StudyProgram[];
   studyFilter: 'all' | string;
+  voiceBusy: boolean;
+  voiceError: string | null;
+  voiceRecording: boolean;
+  voiceStatus: string | null;
 }) {
   const statusOptions: Array<{
     label: string;
@@ -1049,6 +1093,23 @@ function ApplicantsListView({
           value={applicantMatchQuery}
           onChangeText={onChangeMatchQuery}
         />
+        <SecondaryButton
+          disabled={matchingApplicants || voiceBusy}
+          label={
+            voiceBusy
+              ? 'Transcribing...'
+              : voiceRecording
+                ? 'Stop recording'
+                : 'Use mic'
+          }
+          onPress={onToggleVoiceInput}
+        />
+        {voiceStatus ? (
+          <Text style={styles.requirementText}>{voiceStatus}</Text>
+        ) : null}
+        {voiceError ? (
+          <Text style={styles.requirementText}>{voiceError}</Text>
+        ) : null}
         <PrimaryButton
           disabled={matchingApplicants}
           label={
@@ -1512,6 +1573,24 @@ function formatDate(value: string) {
     month: 'short',
     day: 'numeric',
   }).format(new Date(value));
+}
+
+function mergeVoiceTranscript(
+  currentValue: string,
+  transcript: string
+) {
+  const trimmedCurrent = currentValue.trim();
+  const trimmedTranscript = transcript.trim();
+
+  if (!trimmedCurrent) {
+    return trimmedTranscript;
+  }
+
+  if (!trimmedTranscript) {
+    return trimmedCurrent;
+  }
+
+  return `${trimmedCurrent} ${trimmedTranscript}`;
 }
 
 const styles = StyleSheet.create({

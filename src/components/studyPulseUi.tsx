@@ -35,14 +35,23 @@ export function PrimaryButton({
 }
 
 export function SecondaryButton({
+  disabled = false,
   label,
   onPress,
 }: {
+  disabled?: boolean;
   label: string;
   onPress: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.secondaryButton}>
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        styles.secondaryButton,
+        disabled && styles.secondaryButtonDisabled,
+      ]}
+    >
       <Text style={styles.secondaryButtonText}>{label}</Text>
     </Pressable>
   );
@@ -170,6 +179,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 13,
     alignItems: 'center',
+  },
+  secondaryButtonDisabled: {
+    opacity: 0.55,
   },
   secondaryButtonText: {
     color: colors.primary,

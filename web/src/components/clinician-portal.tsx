@@ -8,6 +8,7 @@ import {
   Pill,
   TextArea,
 } from './ui';
+import { useElevenLabsVoiceInput } from '../hooks/use-elevenlabs-voice-input';
 import { matchApplicantsWithGemini } from '../lib/gemini-applicant-matcher';
 import {
   type ApplicantMatchResult,
@@ -97,6 +98,7 @@ export function ClinicianPortal({
     useState(false);
   const [likelyEligibleOnly, setLikelyEligibleOnly] =
     useState(false);
+  const applicantVoiceInput = useElevenLabsVoiceInput();
 
   useEffect(() => {
     if (!selectedStudyId && studies[0]) {
@@ -273,6 +275,28 @@ export function ClinicianPortal({
     setApplicantMatchQuery('');
     setApplicantMatches([]);
     setApplicantMatchSource(null);
+    applicantVoiceInput.clearError();
+  }
+
+  async function handleApplicantVoiceInput() {
+    if (applicantVoiceInput.busy) {
+      return;
+    }
+
+    if (applicantVoiceInput.isRecording) {
+      const result =
+        await applicantVoiceInput.stopRecording();
+
+      if (result.ok) {
+        setApplicantMatchQuery((current) =>
+          mergeVoiceTranscript(current, result.transcript)
+        );
+      }
+
+      return;
+    }
+
+    await applicantVoiceInput.startRecording();
   }
 
   return (
@@ -372,6 +396,9 @@ export function ClinicianPortal({
           onChangeNotes={setNotesDraft}
           onChangeRequestDraft={setRequestDraft}
           onClearApplicantMatch={clearApplicantMatch}
+          onToggleVoiceInput={async () => {
+            await handleApplicantVoiceInput();
+          }}
           onOpenApplicant={setSelectedApplicationId}
           onRunApplicantMatch={async () => {
             await handleApplicantMatch();
@@ -425,6 +452,10 @@ export function ClinicianPortal({
           statusFilter={statusFilter}
           studies={studies}
           studyFilter={studyFilter}
+          voiceBusy={applicantVoiceInput.busy}
+          voiceError={applicantVoiceInput.error}
+          voiceRecording={applicantVoiceInput.isRecording}
+          voiceStatus={applicantVoiceInput.statusText}
           likelyEligibleOnly={likelyEligibleOnly}
         />
       ) : null}
@@ -750,6 +781,7 @@ function ApplicantsPanel({
   onChangeNotes,
   onChangeRequestDraft,
   onClearApplicantMatch,
+  onToggleVoiceInput,
   onOpenApplicant,
   onRunApplicantMatch,
   onSaveNotes,
@@ -769,6 +801,10 @@ function ApplicantsPanel({
   statusFilter,
   studies,
   studyFilter,
+  voiceBusy,
+  voiceError,
+  voiceRecording,
+  voiceStatus,
 }: {
   applications: PatientApplication[];
   applicantMatchQuery: string;
@@ -787,6 +823,7 @@ function ApplicantsPanel({
     draft: ClinicianRequestDraft
   ) => void;
   onClearApplicantMatch: () => void;
+  onToggleVoiceInput: () => Promise<void>;
   onOpenApplicant: (applicationId: string) => void;
   onRunApplicantMatch: () => Promise<void>;
   onSaveNotes: () => Promise<void>;
@@ -810,6 +847,10 @@ function ApplicantsPanel({
   statusFilter: 'all' | ApplicationStatus;
   studies: StudyProgram[];
   studyFilter: 'all' | string;
+  voiceBusy: boolean;
+  voiceError: string | null;
+  voiceRecording: boolean;
+  voiceStatus: string | null;
 }) {
   const statuses: Array<'all' | ApplicationStatus> = [
     'all',
@@ -839,6 +880,17 @@ function ApplicantsPanel({
           />
           <div className="button-row">
             <Button
+              disabled={matchingApplicants || voiceBusy}
+              variant="secondary"
+              onClick={() => void onToggleVoiceInput()}
+            >
+              {voiceBusy
+                ? 'Transcribing...'
+                : voiceRecording
+                  ? 'Stop recording'
+                  : 'Use mic'}
+            </Button>
+            <Button
               disabled={matchingApplicants}
               onClick={() => void onRunApplicantMatch()}
             >
@@ -855,6 +907,10 @@ function ApplicantsPanel({
               </Button>
             ) : null}
           </div>
+          {voiceStatus ? (
+            <p className="muted">{voiceStatus}</p>
+          ) : null}
+          {voiceError ? <p className="muted">{voiceError}</p> : null}
           {applicantMatchSource ? (
             <p className="muted">
               Showing ranked applicants from{' '}
@@ -1171,4 +1227,22 @@ function prettyMatchStatus(status: ApplicantMatchResult['status']) {
     default:
       return 'Not a fit';
   }
+}
+
+function mergeVoiceTranscript(
+  currentValue: string,
+  transcript: string
+) {
+  const trimmedCurrent = currentValue.trim();
+  const trimmedTranscript = transcript.trim();
+
+  if (!trimmedCurrent) {
+    return trimmedTranscript;
+  }
+
+  if (!trimmedTranscript) {
+    return trimmedCurrent;
+  }
+
+  return `${trimmedCurrent} ${trimmedTranscript}`;
 }

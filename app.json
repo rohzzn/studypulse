@@ -11,13 +11,23 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.revuc.studypulse"
+      "bundleIdentifier": "com.revuc.studypulse",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "StudyPulse uses the microphone so patients and clinicians can speak search queries for trial matching."
+      }
     },
     "android": {
-      "package": "com.revuc.studypulse"
+      "package": "com.revuc.studypulse",
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro"
-    }
+    },
+    "plugins": [
+      "expo-audio",
+      "expo-asset"
+    ]
   }
 }
