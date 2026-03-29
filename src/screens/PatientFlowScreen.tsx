@@ -22,12 +22,14 @@ import {
   SecondaryButton,
 } from '../components/studyPulseUi';
 import { defaultApplicationDraft } from '../data/studypulseMockData';
+import { matchStudiesWithGemini } from '../lib/geminiStudyMatcher';
 import { colors } from '../theme/tokens';
 import type {
   ActionResult,
   PatientApplication,
   PatientApplicationDraft,
   ScreeningRequest,
+  StudyMatchResult,
   StudyPulseProfile,
   StudyProgram,
 } from '../types/studypulse';
@@ -104,6 +106,15 @@ export function PatientFlowScreen({
   const [draft, setDraft] = useState<PatientApplicationDraft>(
     () => buildDefaultDraft(accountProfile, patientEmail)
   );
+  const [studyMatchQuery, setStudyMatchQuery] = useState('');
+  const [studyMatches, setStudyMatches] = useState<
+    StudyMatchResult[]
+  >([]);
+  const [studyMatchSource, setStudyMatchSource] = useState<
+    'gemini' | 'local' | null
+  >(null);
+  const [matchingStudies, setMatchingStudies] =
+    useState(false);
   const [requestResponses, setRequestResponses] = useState<
     Record<string, string>
   >({});
@@ -145,6 +156,57 @@ export function PatientFlowScreen({
           request.applicationId === selectedApplication.id
       )
     : [];
+
+  const openStudies = useMemo(
+    () =>
+      studies.filter(
+        (study) => study.recruitStatus === 'open'
+      ),
+    [studies]
+  );
+
+  const studyMatchMap = useMemo(
+    () =>
+      new Map(
+        studyMatches.map((match) => [match.studyId, match] as const)
+      ),
+    [studyMatches]
+  );
+
+  const visibleStudies = useMemo(() => {
+    if (studyMatches.length === 0) {
+      return openStudies;
+    }
+
+    const allowedStudyIds = new Set(
+      studyMatches
+        .filter((match) => match.status !== 'not_a_fit')
+        .map((match) => match.studyId)
+    );
+
+    return openStudies
+      .filter((study) => allowedStudyIds.has(study.id))
+      .sort(
+        (left, right) =>
+          (studyMatchMap.get(right.id)?.score ?? 0) -
+          (studyMatchMap.get(left.id)?.score ?? 0)
+      );
+  }, [openStudies, studyMatchMap, studyMatches]);
+
+  const selectedStudyMatch = selectedStudy
+    ? studyMatchMap.get(selectedStudy.id) ?? null
+    : null;
+
+  useEffect(() => {
+    if (
+      visibleStudies.length > 0 &&
+      !visibleStudies.some(
+        (study) => study.id === selectedStudyId
+      )
+    ) {
+      setSelectedStudyId(visibleStudies[0]?.id ?? null);
+    }
+  }, [selectedStudyId, visibleStudies]);
 
   const screenTitle = useMemo(() => {
     if (activeTab === 'applications') {
@@ -258,11 +320,49 @@ export function PatientFlowScreen({
     }
   }
 
+  async function handleMatchStudies() {
+    if (!studyMatchQuery.trim()) {
+      setStudyMatches([]);
+      setStudyMatchSource(null);
+      return;
+    }
+
+    setMatchingStudies(true);
+
+    try {
+      const result = await matchStudiesWithGemini({
+        patientQuery: studyMatchQuery,
+        profile: accountProfile,
+        studies: openStudies,
+      });
+
+      setStudyMatches(result.matches);
+      setStudyMatchSource(result.source);
+
+      const firstLikelyStudy = result.matches.find(
+        (match) => match.status !== 'not_a_fit'
+      );
+
+      if (firstLikelyStudy) {
+        setSelectedStudyId(firstLikelyStudy.studyId);
+      }
+    } finally {
+      setMatchingStudies(false);
+    }
+  }
+
+  function clearStudyMatches() {
+    setStudyMatchQuery('');
+    setStudyMatches([]);
+    setStudyMatchSource(null);
+  }
+
   const content = useMemo(() => {
     if (activeTab === 'studies') {
       if (studyView === 'detail' && selectedStudy) {
         return (
           <StudyDetailView
+            match={selectedStudyMatch}
             study={selectedStudy}
             onApply={() => startApply(selectedStudy.id)}
             onBack={() => setStudyView('list')}
@@ -328,7 +428,14 @@ export function PatientFlowScreen({
 
       return (
         <StudyListView
-          studies={studies}
+          matchingStudies={matchingStudies}
+          matchSource={studyMatchSource}
+          matchQuery={studyMatchQuery}
+          onChangeMatchQuery={setStudyMatchQuery}
+          onClearMatch={clearStudyMatches}
+          onRunMatch={handleMatchStudies}
+          studyMatches={studyMatchMap}
+          studies={visibleStudies}
           onApply={(studyId) => startApply(studyId)}
           onOpenStudy={(studyId) => {
             setSelectedStudyId(studyId);
@@ -418,6 +525,7 @@ export function PatientFlowScreen({
     accountProfile,
     applications,
     draft,
+    matchingStudies,
     onClearSession,
     patientEmail,
     requestResponses,
@@ -427,7 +535,12 @@ export function PatientFlowScreen({
     selectedApplication,
     selectedApplicationRequests,
     selectedStudy,
+    selectedStudyMatch,
     studies,
+    studyMatchMap,
+    studyMatchQuery,
+    studyMatchSource,
+    visibleStudies,
     studyView,
     submittedApplicationId,
   ]);
@@ -473,35 +586,98 @@ export function PatientFlowScreen({
 }
 
 function StudyListView({
+  matchingStudies,
+  matchQuery,
+  matchSource,
+  onChangeMatchQuery,
+  onClearMatch,
+  onRunMatch,
+  studyMatches,
   studies,
   onApply,
   onOpenStudy,
 }: {
+  matchingStudies: boolean;
+  matchQuery: string;
+  matchSource: 'gemini' | 'local' | null;
+  onChangeMatchQuery: (value: string) => void;
+  onClearMatch: () => void;
+  onRunMatch: () => void;
   studies: StudyProgram[];
+  studyMatches: Map<string, StudyMatchResult>;
   onApply: (studyId: string) => void;
   onOpenStudy: (studyId: string) => void;
 }) {
-  const openStudies = studies.filter(
-    (study) => study.recruitStatus === 'open'
-  );
-
   return (
     <ScrollView
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
-      {openStudies.length === 0 ? (
+      <AppCard style={styles.cardGap}>
+        <Text style={styles.sectionTitle}>AI study matcher</Text>
+        <Text style={styles.bodyText}>
+          Describe your age, location, condition, medications,
+          and visit preference in plain English.
+        </Text>
+        <MultiLineField
+          label="What should StudyPulse look for?"
+          placeholder="I am 42 in Ohio with migraines, on a beta blocker, and I need remote follow-ups."
+          value={matchQuery}
+          onChangeText={onChangeMatchQuery}
+        />
+        <PrimaryButton
+          disabled={matchingStudies}
+          label={
+            matchingStudies ? 'Matching...' : 'Find matching studies'
+          }
+          onPress={() => {
+            void onRunMatch();
+          }}
+        />
+        {matchQuery ? (
+          <SecondaryButton
+            label="Clear matcher"
+            onPress={onClearMatch}
+          />
+        ) : null}
+        {matchSource ? (
+          <Text style={styles.requirementText}>
+            Showing ranked matches from{' '}
+            {matchSource === 'gemini'
+              ? 'Gemini'
+              : 'local fallback'}.
+          </Text>
+        ) : null}
+      </AppCard>
+
+      {studies.length === 0 ? (
         <AppCard>
           <Text style={styles.bodyText}>
-            No open studies right now.
+            {matchQuery
+              ? 'No likely study matches were found. Try adding more detail or broadening your request.'
+              : 'No open studies right now.'}
           </Text>
         </AppCard>
       ) : null}
-      {openStudies.map((study) => (
+      {studies.map((study) => {
+        const match = studyMatches.get(study.id) ?? null;
+
+        return (
           <AppCard key={study.id} style={styles.cardGap}>
             <View style={styles.rowBetween}>
               <Text style={styles.cardTitle}>{study.title}</Text>
-              <Badge label={study.locationType} tone="accent" />
+              <Badge
+                label={
+                  match
+                    ? prettyMatchStatus(match.status)
+                    : study.locationType
+                }
+                tone={
+                  match
+                    ? matchStatusTone(match.status)
+                    : 'accent'
+                }
+              />
             </View>
             <Text style={styles.metaText}>{study.condition}</Text>
             <Text style={styles.bodyText}>
@@ -510,6 +686,14 @@ function StudyListView({
             <Text style={styles.requirementText}>
               {study.eligibilitySummary}
             </Text>
+            {match ? (
+              <>
+                <Text style={styles.bodyText}>{match.reason}</Text>
+                <Text style={styles.requirementText}>
+                  {match.caution}
+                </Text>
+              </>
+            ) : null}
             <Text style={styles.metaText}>
               {study.locationLabel}
             </Text>
@@ -524,16 +708,19 @@ function StudyListView({
               />
             </View>
           </AppCard>
-        ))}
+        );
+      })}
     </ScrollView>
   );
 }
 
 function StudyDetailView({
+  match,
   study,
   onApply,
   onBack,
 }: {
+  match: StudyMatchResult | null;
   study: StudyProgram;
   onApply: () => void;
   onBack: () => void;
@@ -547,6 +734,18 @@ function StudyDetailView({
         <Text style={styles.cardTitle}>{study.title}</Text>
         <Text style={styles.metaText}>{study.condition}</Text>
         <Text style={styles.bodyText}>{study.description}</Text>
+        {match ? (
+          <>
+            <Badge
+              label={prettyMatchStatus(match.status)}
+              tone={matchStatusTone(match.status)}
+            />
+            <Text style={styles.bodyText}>{match.reason}</Text>
+            <Text style={styles.requirementText}>
+              {match.caution}
+            </Text>
+          </>
+        ) : null}
       </AppCard>
       <AppCard style={styles.cardGap}>
         <Text style={styles.sectionTitle}>Who it is for</Text>
@@ -798,7 +997,11 @@ function ApplicationListView({
   setRestoreEmail: (value: string) => void;
   studies: StudyProgram[];
 }) {
-  if (!patientEmail && accountMode === 'demo') {
+  if (
+    !patientEmail &&
+    accountMode === 'demo' &&
+    applications.length === 0
+  ) {
     return (
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -827,11 +1030,33 @@ function ApplicationListView({
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
+      {!patientEmail && accountMode === 'demo' ? (
+        <AppCard style={styles.cardGap}>
+          <Text style={styles.sectionTitle}>
+            Demo patient records
+          </Text>
+          <Text style={styles.bodyText}>
+            Showing the seeded patient dataset for testing.
+            Restore by email if you want to narrow this to one
+            patient.
+          </Text>
+          <Field
+            autoCapitalize="none"
+            keyboardType="email-address"
+            label="Restore applications by email"
+            placeholder="you@example.com"
+            value={restoreEmail}
+            onChangeText={setRestoreEmail}
+          />
+          <PrimaryButton label="Restore" onPress={onRestore} />
+        </AppCard>
+      ) : null}
+
       {applications.length === 0 ? (
         <AppCard>
           <Text style={styles.bodyText}>
             {accountMode === 'auth'
-              ? 'No applications yet. Apply to a study and it will show up here.'
+              ? 'No applications on this account yet. Apply to a study and it will show up here.'
               : 'No applications found for this email yet.'}
           </Text>
         </AppCard>
@@ -1175,6 +1400,33 @@ function statusTone(status: PatientApplication['status']) {
       return 'accent' as const;
     case 'info_requested':
     case 'not_eligible':
+    default:
+      return 'warning' as const;
+  }
+}
+
+function prettyMatchStatus(status: StudyMatchResult['status']) {
+  switch (status) {
+    case 'likely_fit':
+      return 'Likely fit';
+    case 'possible_fit':
+      return 'Possible fit';
+    case 'review_needed':
+      return 'Review needed';
+    case 'not_a_fit':
+    default:
+      return 'Not a fit';
+  }
+}
+
+function matchStatusTone(status: StudyMatchResult['status']) {
+  switch (status) {
+    case 'likely_fit':
+      return 'success' as const;
+    case 'possible_fit':
+      return 'accent' as const;
+    case 'review_needed':
+    case 'not_a_fit':
     default:
       return 'warning' as const;
   }

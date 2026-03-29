@@ -414,6 +414,23 @@ export async function fetchStudyPulseProfile(
   return data ? mapProfileRow(data as ProfileRow) : null;
 }
 
+export async function bootstrapStudyPulseProfile(): Promise<StudyPulseProfile | null> {
+  if (!isSupabaseConfigured || !supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase.rpc(
+    'bootstrap_profile'
+  );
+
+  if (error || !data) {
+    return null;
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? mapProfileRow(row as ProfileRow) : null;
+}
+
 export async function signInStudyPulseAccount(
   draft: AuthSignInDraft
 ): Promise<ActionResult> {

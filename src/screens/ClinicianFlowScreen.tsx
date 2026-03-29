@@ -15,6 +15,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from '../components/studyPulseUi';
+import { matchApplicantsWithGemini } from '../lib/geminiApplicantMatcher';
 import {
   defaultClinicianRequestDraft,
   defaultScheduleCallDraft,
@@ -23,6 +24,7 @@ import {
 import { colors } from '../theme/tokens';
 import type {
   ActionResult,
+  ApplicantMatchResult,
   ApplicationStatus,
   ClinicianProfile,
   ClinicianRequestDraft,
@@ -106,6 +108,15 @@ export function ClinicianFlowScreen({
   const [studyFilter, setStudyFilter] = useState<
     'all' | string
   >('all');
+  const [applicantMatchQuery, setApplicantMatchQuery] =
+    useState('');
+  const [applicantMatches, setApplicantMatches] = useState<
+    ApplicantMatchResult[]
+  >([]);
+  const [applicantMatchSource, setApplicantMatchSource] =
+    useState<'gemini' | 'local' | null>(null);
+  const [matchingApplicants, setMatchingApplicants] =
+    useState(false);
   const [missingInfoOnly, setMissingInfoOnly] =
     useState(false);
   const [likelyEligibleOnly, setLikelyEligibleOnly] =
@@ -147,10 +158,20 @@ export function ClinicianFlowScreen({
     }
   }, [selectedApplication?.id]);
 
+  const applicantMatchMap = useMemo(
+    () =>
+      new Map(
+        applicantMatches.map((match) => [
+          match.applicationId,
+          match,
+        ] as const)
+      ),
+    [applicantMatches]
+  );
+
   const filteredApplications = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
-
-    return applications.filter((application) => {
+    const filtered = applications.filter((application) => {
       const study = studies.find(
         (item) => item.id === application.studyId
       );
@@ -194,8 +215,30 @@ export function ClinicianFlowScreen({
         (!likelyEligibleOnly || likelyEligible)
       );
     });
+
+    if (applicantMatches.length === 0) {
+      return filtered;
+    }
+
+    const allowedApplicationIds = new Set(
+      applicantMatches
+        .filter((match) => match.status !== 'not_a_fit')
+        .map((match) => match.applicationId)
+    );
+
+    return filtered
+      .filter((application) =>
+        allowedApplicationIds.has(application.id)
+      )
+      .sort(
+        (left, right) =>
+          (applicantMatchMap.get(right.id)?.score ?? 0) -
+          (applicantMatchMap.get(left.id)?.score ?? 0)
+      );
   }, [
     applications,
+    applicantMatchMap,
+    applicantMatches,
     likelyEligibleOnly,
     missingInfoOnly,
     searchTerm,
@@ -210,6 +253,22 @@ export function ClinicianFlowScreen({
           request.applicationId === selectedApplication.id
       )
     : [];
+  const selectedApplicationMatch = selectedApplication
+    ? applicantMatchMap.get(selectedApplication.id) ?? null
+    : null;
+
+  useEffect(() => {
+    const firstApplication = filteredApplications[0];
+
+    if (
+      firstApplication &&
+      !filteredApplications.some(
+        (application) => application.id === selectedApplicationId
+      )
+    ) {
+      setSelectedApplicationId(firstApplication.id);
+    }
+  }, [filteredApplications, selectedApplicationId]);
 
   const screenTitle = useMemo(() => {
     if (activeTab === 'dashboard') {
@@ -275,6 +334,43 @@ export function ClinicianFlowScreen({
     }
 
     await scheduleCall(selectedApplication.id, callDraft);
+  }
+
+  async function handleApplicantMatch() {
+    if (!applicantMatchQuery.trim()) {
+      setApplicantMatches([]);
+      setApplicantMatchSource(null);
+      return;
+    }
+
+    setMatchingApplicants(true);
+
+    try {
+      const result = await matchApplicantsWithGemini({
+        applications,
+        clinicianQuery: applicantMatchQuery,
+        studies,
+      });
+
+      setApplicantMatches(result.matches);
+      setApplicantMatchSource(result.source);
+
+      const firstVisibleApplicant = result.matches.find(
+        (match) => match.status !== 'not_a_fit'
+      );
+
+      if (firstVisibleApplicant) {
+        setSelectedApplicationId(firstVisibleApplicant.applicationId);
+      }
+    } finally {
+      setMatchingApplicants(false);
+    }
+  }
+
+  function clearApplicantMatch() {
+    setApplicantMatchQuery('');
+    setApplicantMatches([]);
+    setApplicantMatchSource(null);
   }
 
   const content = useMemo(() => {
@@ -353,6 +449,7 @@ export function ClinicianFlowScreen({
         <ApplicantDetailView
           application={selectedApplication}
           callDraft={callDraft}
+          match={selectedApplicationMatch}
           notesDraft={notesDraft}
           onBack={() => setApplicantView('list')}
           onChangeCallDraft={setCallDraft}
@@ -380,11 +477,20 @@ export function ClinicianFlowScreen({
     return (
       <ApplicantsListView
         applications={filteredApplications}
+        applicantMatchQuery={applicantMatchQuery}
+        applicantMatches={applicantMatchMap}
+        matchSource={applicantMatchSource}
+        matchingApplicants={matchingApplicants}
         likelyEligibleOnly={likelyEligibleOnly}
         missingInfoOnly={missingInfoOnly}
+        onChangeMatchQuery={setApplicantMatchQuery}
+        onClearMatch={clearApplicantMatch}
         onOpenApplicant={(applicationId) => {
           setSelectedApplicationId(applicationId);
           setApplicantView('detail');
+        }}
+        onRunMatch={() => {
+          void handleApplicantMatch();
         }}
         onToggleLikelyEligible={() =>
           setLikelyEligibleOnly((current) => !current)
@@ -405,9 +511,13 @@ export function ClinicianFlowScreen({
     activeTab,
     applicantView,
     applications,
+    applicantMatchMap,
+    applicantMatchQuery,
+    applicantMatchSource,
     callDraft,
     clinician,
     filteredApplications,
+    matchingApplicants,
     likelyEligibleOnly,
     missingInfoOnly,
     notesDraft,
@@ -418,6 +528,7 @@ export function ClinicianFlowScreen({
     saving,
     searchTerm,
     selectedApplication,
+    selectedApplicationMatch,
     selectedRequests,
     selectedStudy,
     statusFilter,
@@ -866,9 +977,16 @@ function CreateStudyView({
 
 function ApplicantsListView({
   applications,
+  applicantMatchQuery,
+  applicantMatches,
+  matchSource,
+  matchingApplicants,
   likelyEligibleOnly,
   missingInfoOnly,
+  onChangeMatchQuery,
+  onClearMatch,
   onOpenApplicant,
+  onRunMatch,
   onToggleLikelyEligible,
   onToggleMissingInfo,
   searchTerm,
@@ -880,9 +998,16 @@ function ApplicantsListView({
   studyFilter,
 }: {
   applications: PatientApplication[];
+  applicantMatchQuery: string;
+  applicantMatches: Map<string, ApplicantMatchResult>;
+  matchSource: 'gemini' | 'local' | null;
+  matchingApplicants: boolean;
   likelyEligibleOnly: boolean;
   missingInfoOnly: boolean;
+  onChangeMatchQuery: (value: string) => void;
+  onClearMatch: () => void;
   onOpenApplicant: (applicationId: string) => void;
+  onRunMatch: () => void;
   onToggleLikelyEligible: () => void;
   onToggleMissingInfo: () => void;
   searchTerm: string;
@@ -913,6 +1038,43 @@ function ApplicantsListView({
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
+      <AppCard style={styles.cardGap}>
+        <Text style={styles.sectionTitle}>AI applicant filter</Text>
+        <Text style={styles.bodyText}>
+          Ask for the kind of applicants you want to review in plain English.
+        </Text>
+        <MultiLineField
+          label="What should StudyPulse surface?"
+          placeholder="Show me migraine applicants in Ohio who look eligible and still need follow-up."
+          value={applicantMatchQuery}
+          onChangeText={onChangeMatchQuery}
+        />
+        <PrimaryButton
+          disabled={matchingApplicants}
+          label={
+            matchingApplicants
+              ? 'Filtering...'
+              : 'Filter applicants with AI'
+          }
+          onPress={onRunMatch}
+        />
+        {applicantMatchQuery ? (
+          <SecondaryButton
+            label="Clear AI filter"
+            onPress={onClearMatch}
+          />
+        ) : null}
+        {matchSource ? (
+          <Text style={styles.requirementText}>
+            Showing ranked applicants from{' '}
+            {matchSource === 'gemini'
+              ? 'Gemini'
+              : 'local fallback'}
+            .
+          </Text>
+        ) : null}
+      </AppCard>
+
       <AppCard style={styles.cardGap}>
         <Field
           label="Search"
@@ -994,6 +1156,20 @@ function ApplicantsListView({
             <Text style={styles.bodyText}>
               {application.condition}
             </Text>
+            {applicantMatches.get(application.id) ? (
+              <>
+                <Text style={styles.bodyText}>
+                  {
+                    applicantMatches.get(application.id)?.reason
+                  }
+                </Text>
+                <Text style={styles.requirementText}>
+                  {
+                    applicantMatches.get(application.id)?.caution
+                  }
+                </Text>
+              </>
+            ) : null}
             <Text style={styles.requirementText}>
               Applied {formatDate(application.createdAt)}
             </Text>
@@ -1011,6 +1187,7 @@ function ApplicantsListView({
 function ApplicantDetailView({
   application,
   callDraft,
+  match,
   notesDraft,
   onBack,
   onChangeCallDraft,
@@ -1027,6 +1204,7 @@ function ApplicantDetailView({
 }: {
   application: PatientApplication;
   callDraft: ScheduleCallDraft;
+  match: ApplicantMatchResult | null;
   notesDraft: string;
   onBack: () => void;
   onChangeCallDraft: (draft: ScheduleCallDraft) => void;
@@ -1077,6 +1255,20 @@ function ApplicantDetailView({
           {application.age} / {application.city}, {application.state}
         </Text>
       </AppCard>
+
+      {match ? (
+        <AppCard style={styles.cardGap}>
+          <Text style={styles.sectionTitle}>AI fit summary</Text>
+          <Badge
+            label={prettyMatchStatus(match.status)}
+            tone={matchStatusTone(match.status)}
+          />
+          <Text style={styles.bodyText}>{match.reason}</Text>
+          <Text style={styles.requirementText}>
+            {match.caution}
+          </Text>
+        </AppCard>
+      ) : null}
 
       <AppCard style={styles.cardGap}>
         <Text style={styles.sectionTitle}>Study fit</Text>
@@ -1283,6 +1475,33 @@ function statusTone(status: ApplicationStatus) {
       return 'accent' as const;
     case 'info_requested':
     case 'not_eligible':
+    default:
+      return 'warning' as const;
+  }
+}
+
+function prettyMatchStatus(status: ApplicantMatchResult['status']) {
+  switch (status) {
+    case 'likely_fit':
+      return 'Likely fit';
+    case 'possible_fit':
+      return 'Possible fit';
+    case 'review_needed':
+      return 'Review needed';
+    case 'not_a_fit':
+    default:
+      return 'Not a fit';
+  }
+}
+
+function matchStatusTone(status: ApplicantMatchResult['status']) {
+  switch (status) {
+    case 'likely_fit':
+      return 'success' as const;
+    case 'possible_fit':
+      return 'accent' as const;
+    case 'review_needed':
+    case 'not_a_fit':
     default:
       return 'warning' as const;
   }

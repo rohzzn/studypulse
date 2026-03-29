@@ -8,7 +8,9 @@ import {
   Pill,
   TextArea,
 } from './ui';
+import { matchApplicantsWithGemini } from '../lib/gemini-applicant-matcher';
 import {
+  type ApplicantMatchResult,
   defaultClinicianRequestDraft,
   defaultScheduleCallDraft,
   defaultStudyDraft,
@@ -82,6 +84,15 @@ export function ClinicianPortal({
   const [statusFilter, setStatusFilter] = useState<
     'all' | ApplicationStatus
   >('all');
+  const [applicantMatchQuery, setApplicantMatchQuery] =
+    useState('');
+  const [applicantMatches, setApplicantMatches] = useState<
+    ApplicantMatchResult[]
+  >([]);
+  const [applicantMatchSource, setApplicantMatchSource] =
+    useState<'gemini' | 'local' | null>(null);
+  const [matchingApplicants, setMatchingApplicants] =
+    useState(false);
   const [missingInfoOnly, setMissingInfoOnly] =
     useState(false);
   const [likelyEligibleOnly, setLikelyEligibleOnly] =
@@ -118,10 +129,20 @@ export function ClinicianPortal({
     }
   }, [selectedApplication]);
 
+  const applicantMatchMap = useMemo(
+    () =>
+      new Map(
+        applicantMatches.map((match) => [
+          match.applicationId,
+          match,
+        ] as const)
+      ),
+    [applicantMatches]
+  );
+
   const filteredApplications = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
-
-    return applications.filter((application) => {
+    const filtered = applications.filter((application) => {
       const study = studies.find(
         (item) => item.id === application.studyId
       );
@@ -161,8 +182,30 @@ export function ClinicianPortal({
         (!likelyEligibleOnly || likelyEligible)
       );
     });
+
+    if (applicantMatches.length === 0) {
+      return filtered;
+    }
+
+    const allowedApplicationIds = new Set(
+      applicantMatches
+        .filter((match) => match.status !== 'not_a_fit')
+        .map((match) => match.applicationId)
+    );
+
+    return filtered
+      .filter((application) =>
+        allowedApplicationIds.has(application.id)
+      )
+      .sort(
+        (left, right) =>
+          (applicantMatchMap.get(right.id)?.score ?? 0) -
+          (applicantMatchMap.get(left.id)?.score ?? 0)
+      );
   }, [
     applications,
+    applicantMatchMap,
+    applicantMatches,
     likelyEligibleOnly,
     missingInfoOnly,
     searchTerm,
@@ -177,6 +220,60 @@ export function ClinicianPortal({
           request.applicationId === selectedApplication.id
       )
     : [];
+  const selectedApplicationMatch = selectedApplication
+    ? applicantMatchMap.get(selectedApplication.id) ?? null
+    : null;
+
+  useEffect(() => {
+    const firstApplication = filteredApplications[0];
+
+    if (
+      firstApplication &&
+      !filteredApplications.some(
+        (application) =>
+          application.id === selectedApplicationId
+      )
+    ) {
+      setSelectedApplicationId(firstApplication.id);
+    }
+  }, [filteredApplications, selectedApplicationId]);
+
+  async function handleApplicantMatch() {
+    if (!applicantMatchQuery.trim()) {
+      setApplicantMatches([]);
+      setApplicantMatchSource(null);
+      return;
+    }
+
+    setMatchingApplicants(true);
+
+    try {
+      const result = await matchApplicantsWithGemini({
+        applications,
+        clinicianQuery: applicantMatchQuery,
+        studies,
+      });
+
+      setApplicantMatches(result.matches);
+      setApplicantMatchSource(result.source);
+
+      const firstVisibleApplicant = result.matches.find(
+        (match) => match.status !== 'not_a_fit'
+      );
+
+      if (firstVisibleApplicant) {
+        setSelectedApplicationId(firstVisibleApplicant.applicationId);
+      }
+    } finally {
+      setMatchingApplicants(false);
+    }
+  }
+
+  function clearApplicantMatch() {
+    setApplicantMatchQuery('');
+    setApplicantMatches([]);
+    setApplicantMatchSource(null);
+  }
 
   return (
     <div className="portal-stack">
@@ -262,14 +359,23 @@ export function ClinicianPortal({
       {tab === 'applicants' ? (
         <ApplicantsPanel
           applications={filteredApplications}
+          applicantMatchQuery={applicantMatchQuery}
+          applicantMatches={applicantMatchMap}
+          applicantMatchSource={applicantMatchSource}
           busy={busy}
           callDraft={callDraft}
+          matchingApplicants={matchingApplicants}
           missingInfoOnly={missingInfoOnly}
           notesDraft={notesDraft}
+          onChangeApplicantMatchQuery={setApplicantMatchQuery}
           onChangeCallDraft={setCallDraft}
           onChangeNotes={setNotesDraft}
           onChangeRequestDraft={setRequestDraft}
+          onClearApplicantMatch={clearApplicantMatch}
           onOpenApplicant={setSelectedApplicationId}
+          onRunApplicantMatch={async () => {
+            await handleApplicantMatch();
+          }}
           onSaveNotes={async () => {
             if (!selectedApplication) {
               return;
@@ -312,6 +418,7 @@ export function ClinicianPortal({
           requests={selectedRequests}
           searchTerm={searchTerm}
           selectedApplication={selectedApplication}
+          selectedApplicationMatch={selectedApplicationMatch}
           setSearchTerm={setSearchTerm}
           setStatusFilter={setStatusFilter}
           setStudyFilter={setStudyFilter}
@@ -629,15 +736,22 @@ function StudiesAdminPanel({
 
 function ApplicantsPanel({
   applications,
+  applicantMatchQuery,
+  applicantMatches,
+  applicantMatchSource,
   busy,
   callDraft,
+  matchingApplicants,
   likelyEligibleOnly,
   missingInfoOnly,
   notesDraft,
+  onChangeApplicantMatchQuery,
   onChangeCallDraft,
   onChangeNotes,
   onChangeRequestDraft,
+  onClearApplicantMatch,
   onOpenApplicant,
+  onRunApplicantMatch,
   onSaveNotes,
   onScheduleCall,
   onSendRequest,
@@ -648,6 +762,7 @@ function ApplicantsPanel({
   requests,
   searchTerm,
   selectedApplication,
+  selectedApplicationMatch,
   setSearchTerm,
   setStatusFilter,
   setStudyFilter,
@@ -656,17 +771,24 @@ function ApplicantsPanel({
   studyFilter,
 }: {
   applications: PatientApplication[];
+  applicantMatchQuery: string;
+  applicantMatches: Map<string, ApplicantMatchResult>;
+  applicantMatchSource: 'gemini' | 'local' | null;
   busy: boolean;
   callDraft: ScheduleCallDraft;
+  matchingApplicants: boolean;
   likelyEligibleOnly: boolean;
   missingInfoOnly: boolean;
   notesDraft: string;
+  onChangeApplicantMatchQuery: (value: string) => void;
   onChangeCallDraft: (draft: ScheduleCallDraft) => void;
   onChangeNotes: (value: string) => void;
   onChangeRequestDraft: (
     draft: ClinicianRequestDraft
   ) => void;
+  onClearApplicantMatch: () => void;
   onOpenApplicant: (applicationId: string) => void;
+  onRunApplicantMatch: () => Promise<void>;
   onSaveNotes: () => Promise<void>;
   onScheduleCall: () => Promise<void>;
   onSendRequest: () => Promise<void>;
@@ -679,6 +801,7 @@ function ApplicantsPanel({
   requests: ScreeningRequest[];
   searchTerm: string;
   selectedApplication: PatientApplication | null;
+  selectedApplicationMatch: ApplicantMatchResult | null;
   setSearchTerm: (value: string) => void;
   setStatusFilter: (
     value: 'all' | ApplicationStatus
@@ -701,6 +824,48 @@ function ApplicantsPanel({
   return (
     <div className="layout-grid">
       <div className="stack">
+        <Card className="detail-card">
+          <p className="eyebrow">Gemini applicant filter</p>
+          <h2>Find the right applicants faster</h2>
+          <p>
+            Ask for the kind of applicants you want to review in
+            plain English.
+          </p>
+          <TextArea
+            label="What should StudyPulse surface?"
+            placeholder="Show me migraine applicants in Ohio who look eligible and still need follow-up."
+            value={applicantMatchQuery}
+            onChange={onChangeApplicantMatchQuery}
+          />
+          <div className="button-row">
+            <Button
+              disabled={matchingApplicants}
+              onClick={() => void onRunApplicantMatch()}
+            >
+              {matchingApplicants
+                ? 'Filtering...'
+                : 'Filter applicants with AI'}
+            </Button>
+            {applicantMatchQuery ? (
+              <Button
+                variant="secondary"
+                onClick={onClearApplicantMatch}
+              >
+                Clear AI filter
+              </Button>
+            ) : null}
+          </div>
+          {applicantMatchSource ? (
+            <p className="muted">
+              Showing ranked applicants from{' '}
+              {applicantMatchSource === 'gemini'
+                ? 'Gemini'
+                : 'the local fallback'}
+              .
+            </p>
+          ) : null}
+        </Card>
+
         <Card className="detail-card">
           <p className="eyebrow">Filters</p>
           <Input
@@ -773,6 +938,14 @@ function ApplicantsPanel({
               {application.age} / {application.city}, {application.state}
             </p>
             <p>{application.condition}</p>
+            {applicantMatches.get(application.id) ? (
+              <>
+                <p>{applicantMatches.get(application.id)?.reason}</p>
+                <p className="muted">
+                  {applicantMatches.get(application.id)?.caution}
+                </p>
+              </>
+            ) : null}
             <Button
               variant="secondary"
               onClick={() => onOpenApplicant(application.id)}
@@ -788,6 +961,26 @@ function ApplicantsPanel({
           <Card className="detail-card">
             <p className="eyebrow">Applicant detail</p>
             <h2>{selectedApplication.fullName}</h2>
+            {selectedApplicationMatch ? (
+              <div className="timeline">
+                <div className="timeline-item">
+                  <span className="muted-label">AI fit</span>
+                  <p>
+                    {prettyMatchStatus(
+                      selectedApplicationMatch.status
+                    )}
+                  </p>
+                </div>
+                <div className="timeline-item">
+                  <span className="muted-label">Reason</span>
+                  <p>{selectedApplicationMatch.reason}</p>
+                </div>
+                <div className="timeline-item">
+                  <span className="muted-label">Caution</span>
+                  <p>{selectedApplicationMatch.caution}</p>
+                </div>
+              </div>
+            ) : null}
             <div className="info-grid">
               <div>
                 <span className="muted-label">Study</span>
@@ -963,5 +1156,19 @@ function prettyStatus(status: ApplicationStatus) {
     case 'submitted':
     default:
       return 'Submitted';
+  }
+}
+
+function prettyMatchStatus(status: ApplicantMatchResult['status']) {
+  switch (status) {
+    case 'likely_fit':
+      return 'Likely fit';
+    case 'possible_fit':
+      return 'Possible fit';
+    case 'review_needed':
+      return 'Review needed';
+    case 'not_a_fit':
+    default:
+      return 'Not a fit';
   }
 }

@@ -143,8 +143,24 @@ export default function App() {
               tone: 'success',
             });
           }}
-          onSignIn={(draft) => withFeedback(signIn(draft))}
-          onSignUp={(draft) => withFeedback(signUp(draft))}
+          onSignIn={async (draft) => {
+            const result = await withFeedback(signIn(draft));
+
+            if (result.ok) {
+              setAllowDemoBypass(false);
+            }
+
+            return result;
+          }}
+          onSignUp={async (draft) => {
+            const result = await withFeedback(signUp(draft));
+
+            if (result.ok) {
+              setAllowDemoBypass(false);
+            }
+
+            return result;
+          }}
         />
       );
     }

@@ -14,12 +14,14 @@ import {
   Pill,
   TextArea,
 } from './ui';
+import { matchStudiesWithGemini } from '../lib/gemini-study-matcher';
 import {
   defaultApplicationDraft,
   type ApplicationDraft,
   type PatientApplication,
   type Profile,
   type ScreeningRequest,
+  type StudyMatchResult,
   type StudyProgram,
 } from '../lib/types';
 
@@ -79,6 +81,14 @@ export function PatientPortal({
   const [requestResponses, setRequestResponses] = useState<
     Record<string, string>
   >({});
+  const [studyMatchQuery, setStudyMatchQuery] = useState('');
+  const [studyMatches, setStudyMatches] = useState<
+    StudyMatchResult[]
+  >([]);
+  const [studyMatchSource, setStudyMatchSource] = useState<
+    'gemini' | 'local' | null
+  >(null);
+  const [matchingStudies, setMatchingStudies] = useState(false);
 
   useEffect(() => {
     if (!selectedStudyId && studies[0]) {
@@ -120,6 +130,57 @@ export function PatientPortal({
       )
     : [];
 
+  const openStudies = useMemo(
+    () =>
+      studies.filter(
+        (study) => study.recruitStatus === 'open'
+      ),
+    [studies]
+  );
+
+  const studyMatchMap = useMemo(
+    () =>
+      new Map(
+        studyMatches.map((match) => [match.studyId, match] as const)
+      ),
+    [studyMatches]
+  );
+
+  const visibleStudies = useMemo(() => {
+    if (studyMatches.length === 0) {
+      return openStudies;
+    }
+
+    const allowedStudyIds = new Set(
+      studyMatches
+        .filter((match) => match.status !== 'not_a_fit')
+        .map((match) => match.studyId)
+    );
+
+    return openStudies
+      .filter((study) => allowedStudyIds.has(study.id))
+      .sort(
+        (left, right) =>
+          (studyMatchMap.get(right.id)?.score ?? 0) -
+          (studyMatchMap.get(left.id)?.score ?? 0)
+      );
+  }, [openStudies, studyMatchMap, studyMatches]);
+
+  const selectedStudyMatch = selectedStudy
+    ? studyMatchMap.get(selectedStudy.id) ?? null
+    : null;
+
+  useEffect(() => {
+    if (
+      visibleStudies.length > 0 &&
+      !visibleStudies.some(
+        (study) => study.id === selectedStudyId
+      )
+    ) {
+      setSelectedStudyId(visibleStudies[0]?.id ?? null);
+    }
+  }, [selectedStudyId, visibleStudies]);
+
   async function handleSubmit() {
     if (!selectedStudyId) {
       return;
@@ -137,6 +198,43 @@ export function PatientPortal({
     setStep(0);
     setStudyView('submitted');
     setTab('studies');
+  }
+
+  async function handleStudyMatch() {
+    if (!studyMatchQuery.trim()) {
+      setStudyMatches([]);
+      setStudyMatchSource(null);
+      return;
+    }
+
+    setMatchingStudies(true);
+
+    try {
+      const result = await matchStudiesWithGemini({
+        patientQuery: studyMatchQuery,
+        profile,
+        studies: openStudies,
+      });
+
+      setStudyMatches(result.matches);
+      setStudyMatchSource(result.source);
+
+      const firstLikelyStudy = result.matches.find(
+        (match) => match.status !== 'not_a_fit'
+      );
+
+      if (firstLikelyStudy) {
+        setSelectedStudyId(firstLikelyStudy.studyId);
+      }
+    } finally {
+      setMatchingStudies(false);
+    }
+  }
+
+  function clearStudyMatch() {
+    setStudyMatchQuery('');
+    setStudyMatches([]);
+    setStudyMatchSource(null);
   }
 
   const screen = useMemo(() => {
@@ -189,6 +287,11 @@ export function PatientPortal({
       <StudiesPanel
         busy={busy}
         draft={draft}
+        matchingStudies={matchingStudies}
+        matchQuery={studyMatchQuery}
+        matchSource={studyMatchSource}
+        onChangeMatchQuery={setStudyMatchQuery}
+        onClearMatch={clearStudyMatch}
         onApply={() => setStudyView('apply')}
         onBackToList={() => setStudyView('list')}
         onChangeDraft={setDraft}
@@ -196,11 +299,14 @@ export function PatientPortal({
           setSelectedStudyId(studyId);
           setStudyView('detail');
         }}
+        onRunMatch={handleStudyMatch}
         onSelectStep={setStep}
         onSubmit={handleSubmit}
+        selectedStudyMatch={selectedStudyMatch}
         selectedStudy={selectedStudy}
         step={step}
-        studies={studies}
+        studies={visibleStudies}
+        studyMatches={studyMatchMap}
         studyView={studyView}
       />
     );
@@ -208,6 +314,7 @@ export function PatientPortal({
     applications,
     busy,
     draft,
+    matchingStudies,
     onRespond,
     profile,
     requestResponses,
@@ -215,8 +322,12 @@ export function PatientPortal({
     selectedApplication,
     selectedApplicationRequests,
     selectedStudy,
+    selectedStudyMatch,
     step,
-    studies,
+    studyMatchMap,
+    studyMatchQuery,
+    studyMatchSource,
+    visibleStudies,
     studyView,
     tab,
   ]);
@@ -273,28 +384,44 @@ export function PatientPortal({
 function StudiesPanel({
   busy,
   draft,
+  matchingStudies,
+  matchQuery,
+  matchSource,
+  onChangeMatchQuery,
+  onClearMatch,
   onApply,
   onBackToList,
   onChangeDraft,
   onOpenStudy,
+  onRunMatch,
   onSelectStep,
   onSubmit,
+  selectedStudyMatch,
   selectedStudy,
   step,
   studies,
+  studyMatches,
   studyView,
 }: {
   busy: boolean;
   draft: ApplicationDraft;
+  matchingStudies: boolean;
+  matchQuery: string;
+  matchSource: 'gemini' | 'local' | null;
+  onChangeMatchQuery: (value: string) => void;
+  onClearMatch: () => void;
   onApply: () => void;
   onBackToList: () => void;
   onChangeDraft: (draft: ApplicationDraft) => void;
   onOpenStudy: (studyId: string) => void;
+  onRunMatch: () => Promise<void>;
   onSelectStep: (step: number) => void;
   onSubmit: () => Promise<void>;
+  selectedStudyMatch: StudyMatchResult | null;
   selectedStudy: StudyProgram | null;
   step: number;
   studies: StudyProgram[];
+  studyMatches: Map<string, StudyMatchResult>;
   studyView: StudyView;
 }) {
   const steps = ['Basic', 'Health', 'Availability'];
@@ -302,8 +429,53 @@ function StudiesPanel({
   return (
     <div className="layout-grid">
       <div className="stack">
+        <Card className="detail-card">
+          <p className="eyebrow">Gemini study matcher</p>
+          <h2>Find the best-fit trials</h2>
+          <p>
+            Describe your age, location, condition, medications,
+            and visit preferences in plain English.
+          </p>
+          <TextArea
+            label="What should StudyPulse look for?"
+            placeholder="I am 42 in Ohio with migraines, on a beta blocker, and I need remote follow-ups."
+            rows={5}
+            value={matchQuery}
+            onChange={onChangeMatchQuery}
+          />
+          <div className="button-row">
+            <Button
+              disabled={matchingStudies}
+              onClick={() => void onRunMatch()}
+            >
+              {matchingStudies
+                ? 'Matching...'
+                : 'Find matching studies'}
+            </Button>
+            {matchQuery ? (
+              <Button variant="secondary" onClick={onClearMatch}>
+                Clear matcher
+              </Button>
+            ) : null}
+          </div>
+          {matchSource ? (
+            <p className="muted">
+              Showing ranked matches from{' '}
+              {matchSource === 'gemini'
+                ? 'Gemini'
+                : 'the local fallback'}.
+            </p>
+          ) : null}
+        </Card>
+
+        {studies.length === 0 ? (
+          <EmptyState
+            title="No likely matches"
+            body="Try broadening the request or removing one of the restrictions."
+          />
+        ) : null}
+
         {studies
-          .filter((study) => study.recruitStatus === 'open')
           .map((study) => (
             <Card key={study.id}>
               <div className="card-topline">
@@ -311,10 +483,25 @@ function StudiesPanel({
                   <p className="eyebrow">{study.condition}</p>
                   <h3>{study.title}</h3>
                 </div>
-                <Pill>{study.locationType}</Pill>
+                <Pill>
+                  {studyMatches.has(study.id)
+                    ? prettyMatchStatus(
+                        studyMatches.get(study.id)?.status ??
+                          'review_needed'
+                      )
+                    : study.locationType}
+                </Pill>
               </div>
               <p>{study.shortDescription}</p>
               <p className="muted">{study.eligibilitySummary}</p>
+              {studyMatches.get(study.id) ? (
+                <>
+                  <p>{studyMatches.get(study.id)?.reason}</p>
+                  <p className="muted">
+                    {studyMatches.get(study.id)?.caution}
+                  </p>
+                </>
+              ) : null}
               <div className="button-row">
                 <Button
                   variant="secondary"
@@ -341,6 +528,22 @@ function StudiesPanel({
             <p className="eyebrow">Study detail</p>
             <h2>{selectedStudy.title}</h2>
             <p>{selectedStudy.description}</p>
+            {selectedStudyMatch ? (
+              <div className="timeline">
+                <div className="timeline-item">
+                  <span className="muted-label">Gemini fit</span>
+                  <p>{prettyMatchStatus(selectedStudyMatch.status)}</p>
+                </div>
+                <div className="timeline-item">
+                  <span className="muted-label">Reason</span>
+                  <p>{selectedStudyMatch.reason}</p>
+                </div>
+                <div className="timeline-item">
+                  <span className="muted-label">Caution</span>
+                  <p>{selectedStudyMatch.caution}</p>
+                </div>
+              </div>
+            ) : null}
             <div className="info-grid">
               <div>
                 <span className="muted-label">Who it is for</span>
@@ -822,6 +1025,20 @@ function prettyStatus(status: PatientApplication['status']) {
     case 'submitted':
     default:
       return 'Submitted';
+  }
+}
+
+function prettyMatchStatus(status: StudyMatchResult['status']) {
+  switch (status) {
+    case 'likely_fit':
+      return 'Likely fit';
+    case 'possible_fit':
+      return 'Possible fit';
+    case 'review_needed':
+      return 'Review needed';
+    case 'not_a_fit':
+    default:
+      return 'Not a fit';
   }
 }
 

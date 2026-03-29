@@ -197,6 +197,20 @@ export async function getProfile(
   return data ? mapProfile(data as ProfileRow) : null;
 }
 
+export async function bootstrapProfile(): Promise<Profile | null> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc(
+    'bootstrap_profile'
+  );
+
+  if (error || !data) {
+    return null;
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? mapProfile(row as ProfileRow) : null;
+}
+
 export async function signUp(
   input: AuthSignUpInput
 ): Promise<ActionResult> {

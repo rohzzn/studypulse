@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
+  bootstrapStudyPulseProfile,
   createScreeningRequest,
   createStudy,
   fetchStudyPulseProfile,
@@ -20,6 +21,7 @@ import {
   writeStoredPatientEmail,
 } from '../lib/studyPulseRepository';
 import type {
+  AccountRole,
   ActionResult,
   ApplicationStatus,
   AuthSignInDraft,
@@ -33,6 +35,53 @@ import type {
   StudyPulseProfile,
   StudyPulseSource,
 } from '../types/studypulse';
+
+function firstString(value: unknown, fallback = '') {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function buildFallbackProfile(
+  session: Session | null
+): StudyPulseProfile | null {
+  if (!session?.user.email) {
+    return null;
+  }
+
+  const metadata = session.user.user_metadata as
+    | Record<string, unknown>
+    | undefined;
+  const role =
+    metadata?.role === 'clinician'
+      ? ('clinician' as AccountRole)
+      : ('patient' as AccountRole);
+  const email = session.user.email.trim().toLowerCase();
+  const fullName = firstString(
+    metadata?.full_name,
+    email.split('@')[0] ?? 'StudyPulse user'
+  );
+
+  return {
+    id: session.user.id,
+    role,
+    email,
+    fullName,
+    phone: firstString(metadata?.phone),
+    city: firstString(metadata?.city),
+    state: firstString(metadata?.state),
+    siteName: firstString(
+      metadata?.site_name,
+      role === 'clinician'
+        ? 'StudyPulse Research Network'
+        : ''
+    ),
+    title: firstString(
+      metadata?.title,
+      role === 'clinician'
+        ? 'Clinical Research Coordinator'
+        : ''
+    ),
+  };
+}
 
 export function useStudyPulseData() {
   const [data, setData] = useState<StudyPulseData | null>(null);
@@ -50,6 +99,10 @@ export function useStudyPulseData() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] =
     useState<StudyPulseProfile | null>(null);
+  const resolvedProfile = useMemo(
+    () => profile ?? buildFallbackProfile(session),
+    [profile, session]
+  );
 
   async function syncData(isRefresh = false) {
     if (isRefresh) {
@@ -124,15 +177,18 @@ export function useStudyPulseData() {
     setAuthLoading(true);
 
     void fetchStudyPulseProfile(session.user.id)
-      .then((nextProfile) => {
+      .then(async (nextProfile) => {
         if (!active) {
           return;
         }
 
-        setProfile(nextProfile);
+        const resolved =
+          nextProfile ?? (await bootstrapStudyPulseProfile());
 
-        if (nextProfile?.email) {
-          setStoredPatientEmail(nextProfile.email);
+        setProfile(resolved);
+
+        if (resolved?.email) {
+          setStoredPatientEmail(resolved.email);
         }
       })
       .catch((profileError) => {
@@ -208,10 +264,10 @@ export function useStudyPulseData() {
   }, []);
 
   const patientIdentity = useMemo(() => {
-    if (session?.user.id && profile?.email) {
+    if (session?.user.id && resolvedProfile?.email) {
       return {
         authUserId: session.user.id,
-        email: profile.email.toLowerCase(),
+        email: resolvedProfile.email.toLowerCase(),
       };
     }
 
@@ -223,26 +279,32 @@ export function useStudyPulseData() {
     }
 
     return null;
-  }, [profile?.email, session?.user.id, storedPatientEmail]);
+  }, [
+    resolvedProfile?.email,
+    session?.user.id,
+    storedPatientEmail,
+  ]);
 
   const patientApplications =
-    data?.applications.filter((application) => {
-      if (!patientIdentity) {
-        return false;
-      }
+    !patientIdentity && source === 'demo'
+      ? data?.applications ?? []
+      : data?.applications.filter((application) => {
+          if (!patientIdentity) {
+            return false;
+          }
 
-      if (
-        patientIdentity.authUserId &&
-        application.authUserId === patientIdentity.authUserId
-      ) {
-        return true;
-      }
+          if (
+            patientIdentity.authUserId &&
+            application.authUserId === patientIdentity.authUserId
+          ) {
+            return true;
+          }
 
-      return (
-        application.email.toLowerCase() ===
-        patientIdentity.email
-      );
-    }) ?? [];
+          return (
+            application.email.toLowerCase() ===
+            patientIdentity.email
+          );
+        }) ?? [];
 
   const patientRequests =
     data?.requests.filter((request) =>
@@ -280,9 +342,10 @@ export function useStudyPulseData() {
     error,
     loading,
     patientApplications,
-    patientEmail: profile?.email ?? storedPatientEmail,
+    patientEmail:
+      resolvedProfile?.email ?? storedPatientEmail,
     patientRequests,
-    profile,
+    profile: resolvedProfile,
     refresh: () => syncData(true),
     refreshing,
     saving,

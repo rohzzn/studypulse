@@ -6,6 +6,7 @@ import { ClinicianPortal } from './components/clinician-portal';
 import { PatientPortal } from './components/patient-portal';
 import { Button, Pill } from './components/ui';
 import {
+  bootstrapProfile,
   createPatientApplication,
   createScreeningRequest,
   createStudy,
@@ -39,6 +40,50 @@ import type {
   StudyProgram,
   ThemeMode,
 } from './lib/types';
+
+function firstString(value: unknown, fallback = '') {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function buildFallbackProfile(
+  session: Session | null
+): Profile | null {
+  if (!session?.user.email) {
+    return null;
+  }
+
+  const metadata = session.user.user_metadata as
+    | Record<string, unknown>
+    | undefined;
+  const role =
+    metadata?.role === 'clinician' ? 'clinician' : 'patient';
+  const email = session.user.email.trim().toLowerCase();
+
+  return {
+    id: session.user.id,
+    role,
+    email,
+    fullName: firstString(
+      metadata?.full_name,
+      email.split('@')[0] ?? 'StudyPulse user'
+    ),
+    phone: firstString(metadata?.phone),
+    city: firstString(metadata?.city),
+    state: firstString(metadata?.state),
+    siteName: firstString(
+      metadata?.site_name,
+      role === 'clinician'
+        ? 'StudyPulse Research Network'
+        : ''
+    ),
+    title: firstString(
+      metadata?.title,
+      role === 'clinician'
+        ? 'Clinical Research Coordinator'
+        : ''
+    ),
+  };
+}
 
 const THEME_STORAGE_KEY = 'studypulse-web-theme';
 
@@ -114,13 +159,16 @@ export default function App() {
     setPortalLoading(true);
 
     try {
-      const nextProfile = await getProfile(nextSession.user.id);
+      const nextProfile =
+        (await getProfile(nextSession.user.id)) ??
+        (await bootstrapProfile()) ??
+        buildFallbackProfile(nextSession);
 
       if (!nextProfile) {
         setProfile(null);
         setFeedback({
           message:
-            'Your account exists, but the profile record is missing. Re-run the SQL schema and sign in again.',
+            'Unable to load your StudyPulse account.',
           tone: 'warning',
         });
         return;
@@ -148,6 +196,8 @@ export default function App() {
         setApplications(nextApplications);
         setRequests(nextRequests);
       }
+
+      setFeedback(null);
     } catch (error) {
       const message =
         error instanceof Error

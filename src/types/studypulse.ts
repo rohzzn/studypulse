@@ -16,6 +16,14 @@ export type StudyLocationType =
 
 export type StudyRecruitStatus = 'open' | 'closed';
 
+export type StudyMatchStatus =
+  | 'likely_fit'
+  | 'possible_fit'
+  | 'review_needed'
+  | 'not_a_fit';
+
+export type ApplicantMatchStatus = StudyMatchStatus;
+
 export type ApplicationStatus =
   | 'submitted'
   | 'under_review'
@@ -48,6 +56,32 @@ export type StudyProgram = {
   studyType: string;
   timeCommitment: string;
   title: string;
+};
+
+export type StudyMatchResult = {
+  caution: string;
+  reason: string;
+  score: number;
+  status: StudyMatchStatus;
+  studyId: string;
+};
+
+export type StudyMatchResponse = {
+  matches: StudyMatchResult[];
+  source: 'gemini' | 'local';
+};
+
+export type ApplicantMatchResult = {
+  applicationId: string;
+  status: ApplicantMatchStatus;
+  score: number;
+  reason: string;
+  caution: string;
+};
+
+export type ApplicantMatchResponse = {
+  matches: ApplicantMatchResult[];
+  source: 'gemini' | 'local';
 };
 
 export type StudyDraft = {
