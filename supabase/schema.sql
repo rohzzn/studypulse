@@ -1,14 +1,15 @@
 create extension if not exists pgcrypto;
 
 drop trigger if exists on_auth_user_created on auth.users;
-drop function if exists public.handle_new_user();
-drop function if exists public.set_updated_at();
 
 drop table if exists public.screening_requests;
 drop table if exists public.patient_applications;
 drop table if exists public.clinicians;
 drop table if exists public.profiles;
 drop table if exists public.study_programs;
+
+drop function if exists public.handle_new_user();
+drop function if exists public.set_updated_at();
 
 create table public.study_programs (
   id text primary key default ('study-' || replace(gen_random_uuid()::text, '-', '')),
