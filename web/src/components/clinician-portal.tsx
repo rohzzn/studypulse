@@ -11,7 +11,12 @@ import {
 import { useElevenLabsVoiceInput } from '../hooks/use-elevenlabs-voice-input';
 import { matchApplicantsWithGemini } from '../lib/gemini-applicant-matcher';
 import {
+  buildApplicantSubmissionSummaryLocal,
+  summarizeApplicantSubmissionWithGemini,
+} from '../lib/gemini-applicant-summary';
+import {
   type ApplicantMatchResult,
+  type ApplicantSubmissionSummary,
   defaultClinicianRequestDraft,
   defaultScheduleCallDraft,
   defaultStudyDraft,
@@ -92,6 +97,13 @@ export function ClinicianPortal({
   >([]);
   const [applicantMatchSource, setApplicantMatchSource] =
     useState<'gemini' | 'local' | null>(null);
+  const [applicantSummaries, setApplicantSummaries] = useState<
+    Record<string, ApplicantSubmissionSummary>
+  >({});
+  const [applicantSummarySources, setApplicantSummarySources] =
+    useState<Record<string, 'gemini' | 'local'>>({});
+  const [summarizingApplicationId, setSummarizingApplicationId] =
+    useState<string | null>(null);
   const [matchingApplicants, setMatchingApplicants] =
     useState(false);
   const [missingInfoOnly, setMissingInfoOnly] =
@@ -225,6 +237,82 @@ export function ClinicianPortal({
   const selectedApplicationMatch = selectedApplication
     ? applicantMatchMap.get(selectedApplication.id) ?? null
     : null;
+  const selectedApplicationStudy = selectedApplication
+    ? studies.find(
+        (study) => study.id === selectedApplication.studyId
+      ) ?? null
+    : null;
+  const selectedApplicationSummary = selectedApplication
+    ? applicantSummaries[selectedApplication.id] ??
+      buildApplicantSubmissionSummaryLocal(
+        selectedApplication,
+        selectedApplicationStudy
+      )
+    : null;
+  const selectedApplicationSummarySource =
+    selectedApplication
+      ? applicantSummarySources[selectedApplication.id] ??
+        'local'
+      : null;
+
+  useEffect(() => {
+    if (!selectedApplication) {
+      return;
+    }
+
+    if (
+      applicantSummaries[selectedApplication.id] ||
+      summarizingApplicationId === selectedApplication.id
+    ) {
+      return;
+    }
+
+    const applicationId = selectedApplication.id;
+    let cancelled = false;
+
+    setSummarizingApplicationId(applicationId);
+
+    void summarizeApplicantSubmissionWithGemini({
+      application: selectedApplication,
+      study: selectedApplicationStudy,
+    })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        setApplicantSummaries((current) => {
+          if (current[applicationId]) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [applicationId]: result.summary,
+          };
+        });
+        setApplicantSummarySources((current) => ({
+          ...current,
+          [applicationId]: result.source,
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSummarizingApplicationId((current) =>
+            current === applicationId ? null : current
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applicantSummaries,
+    selectedApplication,
+    selectedApplicationStudy,
+    summarizingApplicationId,
+  ]);
 
   useEffect(() => {
     const firstApplication = filteredApplications[0];
@@ -446,6 +534,16 @@ export function ClinicianPortal({
           searchTerm={searchTerm}
           selectedApplication={selectedApplication}
           selectedApplicationMatch={selectedApplicationMatch}
+          selectedApplicationStudy={selectedApplicationStudy}
+          selectedApplicationSummary={selectedApplicationSummary}
+          selectedApplicationSummaryLoading={
+            summarizingApplicationId ===
+              selectedApplication?.id &&
+            !selectedApplicationSummary
+          }
+          selectedApplicationSummarySource={
+            selectedApplicationSummarySource
+          }
           setSearchTerm={setSearchTerm}
           setStatusFilter={setStatusFilter}
           setStudyFilter={setStudyFilter}
@@ -795,6 +893,10 @@ function ApplicantsPanel({
   searchTerm,
   selectedApplication,
   selectedApplicationMatch,
+  selectedApplicationStudy,
+  selectedApplicationSummary,
+  selectedApplicationSummaryLoading,
+  selectedApplicationSummarySource,
   setSearchTerm,
   setStatusFilter,
   setStudyFilter,
@@ -839,6 +941,10 @@ function ApplicantsPanel({
   searchTerm: string;
   selectedApplication: PatientApplication | null;
   selectedApplicationMatch: ApplicantMatchResult | null;
+  selectedApplicationStudy: StudyProgram | null;
+  selectedApplicationSummary: ApplicantSubmissionSummary | null;
+  selectedApplicationSummaryLoading: boolean;
+  selectedApplicationSummarySource: 'gemini' | 'local' | null;
   setSearchTerm: (value: string) => void;
   setStatusFilter: (
     value: 'all' | ApplicationStatus
@@ -1037,16 +1143,90 @@ function ApplicantsPanel({
                 </div>
               </div>
             ) : null}
+            <div className="timeline">
+              <div className="timeline-item">
+                <span className="muted-label">
+                  AI submission summary
+                </span>
+                <p className="muted">
+                  {selectedApplicationSummaryLoading
+                    ? 'Showing a structured local summary while Gemini is loading.'
+                    : selectedApplicationSummarySource ===
+                        'gemini'
+                      ? 'Generated with Gemini from the patient submission.'
+                      : 'Generated from the submitted answers using the local fallback.'}
+                </p>
+              </div>
+              {selectedApplicationSummary ? (
+                <>
+                  <div className="timeline-item">
+                    <span className="muted-label">
+                      Condition summary
+                    </span>
+                    <p>
+                      {
+                        selectedApplicationSummary.conditionSummary
+                      }
+                    </p>
+                  </div>
+                  <div className="timeline-item">
+                    <span className="muted-label">
+                      Medication summary
+                    </span>
+                    <p>
+                      {
+                        selectedApplicationSummary.medicationSummary
+                      }
+                    </p>
+                  </div>
+                  <div className="timeline-item">
+                    <span className="muted-label">
+                      Availability summary
+                    </span>
+                    <p>
+                      {
+                        selectedApplicationSummary.availabilitySummary
+                      }
+                    </p>
+                  </div>
+                  <div className="timeline-item">
+                    <span className="muted-label">
+                      Motivation summary
+                    </span>
+                    <p>
+                      {
+                        selectedApplicationSummary.motivationSummary
+                      }
+                    </p>
+                  </div>
+                  <div className="timeline-item">
+                    <span className="muted-label">
+                      Clinician note
+                    </span>
+                    <p>
+                      {
+                        selectedApplicationSummary.clinicianSummary
+                      }
+                    </p>
+                  </div>
+                  <div className="timeline-item">
+                    <span className="muted-label">
+                      Suggested follow-up
+                    </span>
+                    <p>
+                      {
+                        selectedApplicationSummary.followUpSuggestion
+                      }
+                    </p>
+                  </div>
+                </>
+              ) : null}
+            </div>
             <div className="info-grid">
               <div>
                 <span className="muted-label">Study</span>
                 <p>
-                  {
-                    studies.find(
-                      (study) =>
-                        study.id === selectedApplication.studyId
-                    )?.title
-                  }
+                  {selectedApplicationStudy?.title ?? 'Study'}
                 </p>
               </div>
               <div>
@@ -1062,8 +1242,24 @@ function ApplicantsPanel({
                 <p>{selectedApplication.condition}</p>
               </div>
               <div>
+                <span className="muted-label">
+                  Current medications
+                </span>
+                <p>
+                  {selectedApplication.currentMedications ||
+                    'None provided'}
+                </p>
+              </div>
+              <div>
                 <span className="muted-label">Availability</span>
                 <p>{selectedApplication.availability}</p>
+              </div>
+              <div>
+                <span className="muted-label">Motivation</span>
+                <p>
+                  {selectedApplication.motivation ||
+                    'Not provided'}
+                </p>
               </div>
             </div>
 

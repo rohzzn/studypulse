@@ -18,6 +18,10 @@ import {
 import { useElevenLabsVoiceInput } from '../hooks/useElevenLabsVoiceInput';
 import { matchApplicantsWithGemini } from '../lib/geminiApplicantMatcher';
 import {
+  buildApplicantSubmissionSummaryLocal,
+  summarizeApplicantSubmissionWithGemini,
+} from '../lib/geminiApplicantSummary';
+import {
   defaultClinicianRequestDraft,
   defaultScheduleCallDraft,
   defaultStudyDraft,
@@ -26,6 +30,7 @@ import { colors } from '../theme/tokens';
 import type {
   ActionResult,
   ApplicantMatchResult,
+  ApplicantSubmissionSummary,
   ApplicationStatus,
   ClinicianProfile,
   ClinicianRequestDraft,
@@ -116,6 +121,13 @@ export function ClinicianFlowScreen({
   >([]);
   const [applicantMatchSource, setApplicantMatchSource] =
     useState<'gemini' | 'local' | null>(null);
+  const [applicantSummaries, setApplicantSummaries] = useState<
+    Record<string, ApplicantSubmissionSummary>
+  >({});
+  const [applicantSummarySources, setApplicantSummarySources] =
+    useState<Record<string, 'gemini' | 'local'>>({});
+  const [summarizingApplicationId, setSummarizingApplicationId] =
+    useState<string | null>(null);
   const [matchingApplicants, setMatchingApplicants] =
     useState(false);
   const [missingInfoOnly, setMissingInfoOnly] =
@@ -258,6 +270,82 @@ export function ClinicianFlowScreen({
   const selectedApplicationMatch = selectedApplication
     ? applicantMatchMap.get(selectedApplication.id) ?? null
     : null;
+  const selectedApplicationStudy = selectedApplication
+    ? studies.find(
+        (study) => study.id === selectedApplication.studyId
+      ) ?? null
+    : null;
+  const selectedApplicationSummary = selectedApplication
+    ? applicantSummaries[selectedApplication.id] ??
+      buildApplicantSubmissionSummaryLocal(
+        selectedApplication,
+        selectedApplicationStudy
+      )
+    : null;
+  const selectedApplicationSummarySource =
+    selectedApplication
+      ? applicantSummarySources[selectedApplication.id] ??
+        'local'
+      : null;
+
+  useEffect(() => {
+    if (!selectedApplication) {
+      return;
+    }
+
+    if (
+      applicantSummaries[selectedApplication.id] ||
+      summarizingApplicationId === selectedApplication.id
+    ) {
+      return;
+    }
+
+    const applicationId = selectedApplication.id;
+    let cancelled = false;
+
+    setSummarizingApplicationId(applicationId);
+
+    void summarizeApplicantSubmissionWithGemini({
+      application: selectedApplication,
+      study: selectedApplicationStudy,
+    })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        setApplicantSummaries((current) => {
+          if (current[applicationId]) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [applicationId]: result.summary,
+          };
+        });
+        setApplicantSummarySources((current) => ({
+          ...current,
+          [applicationId]: result.source,
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSummarizingApplicationId((current) =>
+            current === applicationId ? null : current
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applicantSummaries,
+    selectedApplication,
+    selectedApplicationStudy,
+    summarizingApplicationId,
+  ]);
 
   useEffect(() => {
     const firstApplication = filteredApplications[0];
@@ -487,11 +575,15 @@ export function ClinicianFlowScreen({
           requestDraft={requestDraft}
           requests={selectedRequests}
           saving={saving}
-          study={
-            studies.find(
-              (study) =>
-                study.id === selectedApplication.studyId
-            ) ?? null
+          study={selectedApplicationStudy}
+          submissionSummary={selectedApplicationSummary}
+          submissionSummaryLoading={
+            summarizingApplicationId ===
+              selectedApplication.id &&
+            !selectedApplicationSummary
+          }
+          submissionSummarySource={
+            selectedApplicationSummarySource
           }
         />
       );
@@ -559,8 +651,12 @@ export function ClinicianFlowScreen({
     searchTerm,
     selectedApplication,
     selectedApplicationMatch,
+    selectedApplicationStudy,
+    selectedApplicationSummary,
+    selectedApplicationSummarySource,
     selectedRequests,
     selectedStudy,
+    summarizingApplicationId,
     statusFilter,
     studies,
     studyDraft,
@@ -1262,6 +1358,9 @@ function ApplicantDetailView({
   requests,
   saving,
   study,
+  submissionSummary,
+  submissionSummaryLoading,
+  submissionSummarySource,
 }: {
   application: PatientApplication;
   callDraft: ScheduleCallDraft;
@@ -1281,6 +1380,9 @@ function ApplicantDetailView({
   requests: ScreeningRequest[];
   saving: boolean;
   study: StudyProgram | null;
+  submissionSummary: ApplicantSubmissionSummary | null;
+  submissionSummaryLoading: boolean;
+  submissionSummarySource: 'gemini' | 'local' | null;
 }) {
   const statusOptions: ApplicationStatus[] = [
     'submitted',
@@ -1330,6 +1432,49 @@ function ApplicantDetailView({
           </Text>
         </AppCard>
       ) : null}
+
+      <AppCard style={styles.cardGap}>
+        <Text style={styles.sectionTitle}>
+          AI submission summary
+        </Text>
+        <Text style={styles.requirementText}>
+          {submissionSummaryLoading
+            ? 'Showing a structured local summary while Gemini is loading.'
+            : submissionSummarySource === 'gemini'
+              ? 'Generated with Gemini from the patient submission.'
+              : 'Generated from the submitted answers using the local fallback.'}
+        </Text>
+        {submissionSummary ? (
+          <>
+            <Text style={styles.detailLabel}>Condition summary</Text>
+            <Text style={styles.bodyText}>
+              {submissionSummary.conditionSummary}
+            </Text>
+            <Text style={styles.detailLabel}>Medication summary</Text>
+            <Text style={styles.bodyText}>
+              {submissionSummary.medicationSummary}
+            </Text>
+            <Text style={styles.detailLabel}>Availability summary</Text>
+            <Text style={styles.bodyText}>
+              {submissionSummary.availabilitySummary}
+            </Text>
+            <Text style={styles.detailLabel}>Motivation summary</Text>
+            <Text style={styles.bodyText}>
+              {submissionSummary.motivationSummary}
+            </Text>
+            <Text style={styles.detailLabel}>Clinician note</Text>
+            <Text style={styles.bodyText}>
+              {submissionSummary.clinicianSummary}
+            </Text>
+            <Text style={styles.detailLabel}>
+              Suggested follow-up
+            </Text>
+            <Text style={styles.requirementText}>
+              {submissionSummary.followUpSuggestion}
+            </Text>
+          </>
+        ) : null}
+      </AppCard>
 
       <AppCard style={styles.cardGap}>
         <Text style={styles.sectionTitle}>Study fit</Text>

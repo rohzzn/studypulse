@@ -84,6 +84,21 @@ export type ApplicantMatchResponse = {
   source: 'gemini' | 'local';
 };
 
+export type ApplicantSubmissionSummary = {
+  applicationId: string;
+  availabilitySummary: string;
+  clinicianSummary: string;
+  conditionSummary: string;
+  followUpSuggestion: string;
+  medicationSummary: string;
+  motivationSummary: string;
+};
+
+export type ApplicantSubmissionSummaryResponse = {
+  source: 'gemini' | 'local';
+  summary: ApplicantSubmissionSummary;
+};
+
 export type StudyDraft = {
   ageMax: string;
   ageMin: string;
