@@ -342,7 +342,7 @@ export default function App() {
             studyId,
             draft: ApplicationDraft
           ) => {
-            await withFeedback(() =>
+            return withFeedback(() =>
               createPatientApplication(
                 session,
                 profile,

@@ -631,18 +631,26 @@ export async function savePatientApplication(
     };
   }
 
-  const currentAuthUserId =
+  const currentSession =
     isSupabaseConfigured && supabase
-      ? (await supabase.auth.getSession()).data.session?.user.id ??
-        null
+      ? (await supabase.auth.getSession()).data.session
       : null;
+  const normalizedEmail =
+    currentSession?.user.email?.trim().toLowerCase() ??
+    draft.email.trim().toLowerCase();
 
-  const nextApplication = buildApplicationFromDraft(
-    draft,
-    studyId,
-    existing,
-    currentAuthUserId
-  );
+  const nextApplication = {
+    ...buildApplicationFromDraft(
+      {
+        ...draft,
+        email: normalizedEmail,
+      },
+      studyId,
+      existing,
+      currentSession?.user.id ?? null
+    ),
+    email: normalizedEmail,
+  };
 
   if (!isSupabaseConfigured || !supabase) {
     const db = readLocalDb();

@@ -17,6 +17,7 @@ import {
 import { useElevenLabsVoiceInput } from '../hooks/use-elevenlabs-voice-input';
 import { matchStudiesWithGemini } from '../lib/gemini-study-matcher';
 import {
+  type ActionResult,
   defaultApplicationDraft,
   type ApplicationDraft,
   type PatientApplication,
@@ -36,7 +37,7 @@ type PatientPortalProps = {
   onSubmitApplication: (
     studyId: string,
     draft: ApplicationDraft
-  ) => Promise<void>;
+  ) => Promise<ActionResult>;
   profile: Profile;
   requests: ScreeningRequest[];
   studies: StudyProgram[];
@@ -70,6 +71,8 @@ export function PatientPortal({
     useState<string | null>(studies[0]?.id ?? null);
   const [selectedApplicationId, setSelectedApplicationId] =
     useState<string | null>(applications[0]?.id ?? null);
+  const [submittedStudyId, setSubmittedStudyId] =
+    useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<ApplicationDraft>({
     ...defaultApplicationDraft,
@@ -183,21 +186,56 @@ export function PatientPortal({
     }
   }, [selectedStudyId, visibleStudies]);
 
-  async function handleSubmit() {
-    if (!selectedStudyId) {
+  useEffect(() => {
+    if (!submittedStudyId || applications.length === 0) {
       return;
     }
 
-    await onSubmitApplication(selectedStudyId, draft);
-    setDraft({
+    const latestForStudy = applications.find(
+      (application) => application.studyId === submittedStudyId
+    );
+
+    if (latestForStudy) {
+      setSelectedApplicationId(latestForStudy.id);
+    }
+  }, [applications, submittedStudyId]);
+
+  function buildInitialDraft() {
+    return {
       ...defaultApplicationDraft,
       fullName: profile.fullName,
       email: profile.email,
       phone: profile.phone,
       city: profile.city,
       state: profile.state,
-    });
+    };
+  }
+
+  function startApplication(studyId: string) {
+    setSelectedStudyId(studyId);
+    setDraft(buildInitialDraft());
     setStep(0);
+    setStudyView('apply');
+    setSubmittedStudyId(null);
+  }
+
+  async function handleSubmit() {
+    if (!selectedStudyId) {
+      return;
+    }
+
+    const result = await onSubmitApplication(
+      selectedStudyId,
+      draft
+    );
+
+    if (!result.ok) {
+      return;
+    }
+
+    setDraft(buildInitialDraft());
+    setStep(0);
+    setSubmittedStudyId(selectedStudyId);
     setStudyView('submitted');
     setTab('studies');
   }
@@ -318,12 +356,17 @@ export function PatientPortal({
         onToggleVoiceInput={async () => {
           await handleStudyVoiceInput();
         }}
-        onApply={() => setStudyView('apply')}
-        onBackToList={() => setStudyView('list')}
+        onApply={startApplication}
+        onBackToList={() => {
+          setStudyView('list');
+          setSubmittedStudyId(null);
+        }}
+        onOpenApplications={() => setTab('applications')}
         onChangeDraft={setDraft}
         onOpenStudy={(studyId) => {
           setSelectedStudyId(studyId);
           setStudyView('detail');
+          setSubmittedStudyId(null);
         }}
         onRunMatch={handleStudyMatch}
         onSelectStep={setStep}
@@ -426,6 +469,7 @@ function StudiesPanel({
   onToggleVoiceInput,
   onApply,
   onBackToList,
+  onOpenApplications,
   onChangeDraft,
   onOpenStudy,
   onRunMatch,
@@ -450,8 +494,9 @@ function StudiesPanel({
   onChangeMatchQuery: (value: string) => void;
   onClearMatch: () => void;
   onToggleVoiceInput: () => Promise<void>;
-  onApply: () => void;
+  onApply: (studyId: string) => void;
   onBackToList: () => void;
+  onOpenApplications: () => void;
   onChangeDraft: (draft: ApplicationDraft) => void;
   onOpenStudy: (studyId: string) => void;
   onRunMatch: () => Promise<void>;
@@ -570,8 +615,7 @@ function StudiesPanel({
                 </Button>
                 <Button
                   onClick={() => {
-                    onOpenStudy(study.id);
-                    onApply();
+                    onApply(study.id);
                   }}
                 >
                   Apply
@@ -583,54 +627,52 @@ function StudiesPanel({
 
       <div className="stack">
         {selectedStudy ? (
-          <Card className="detail-card">
-            <p className="eyebrow">Study detail</p>
-            <h2>{selectedStudy.title}</h2>
-            <p>{selectedStudy.description}</p>
-            {selectedStudyMatch ? (
-              <div className="timeline">
-                <div className="timeline-item">
-                  <span className="muted-label">Gemini fit</span>
-                  <p>{prettyMatchStatus(selectedStudyMatch.status)}</p>
+          studyView === 'apply' ? null : (
+            <Card className="detail-card">
+              <p className="eyebrow">Study detail</p>
+              <h2>{selectedStudy.title}</h2>
+              <p>{selectedStudy.description}</p>
+              {selectedStudyMatch ? (
+                <div className="timeline">
+                  <div className="timeline-item">
+                    <span className="muted-label">Gemini fit</span>
+                    <p>{prettyMatchStatus(selectedStudyMatch.status)}</p>
+                  </div>
+                  <div className="timeline-item">
+                    <span className="muted-label">Reason</span>
+                    <p>{selectedStudyMatch.reason}</p>
+                  </div>
+                  <div className="timeline-item">
+                    <span className="muted-label">Caution</span>
+                    <p>{selectedStudyMatch.caution}</p>
+                  </div>
                 </div>
-                <div className="timeline-item">
-                  <span className="muted-label">Reason</span>
-                  <p>{selectedStudyMatch.reason}</p>
+              ) : null}
+              <div className="info-grid">
+                <div>
+                  <span className="muted-label">Who it is for</span>
+                  <p>{selectedStudy.eligibilitySummary}</p>
                 </div>
-                <div className="timeline-item">
-                  <span className="muted-label">Caution</span>
-                  <p>{selectedStudyMatch.caution}</p>
+                <div>
+                  <span className="muted-label">Requirements</span>
+                  <p>{selectedStudy.requirements}</p>
+                </div>
+                <div>
+                  <span className="muted-label">Location</span>
+                  <p>{selectedStudy.locationLabel}</p>
+                </div>
+                <div>
+                  <span className="muted-label">Time commitment</span>
+                  <p>{selectedStudy.timeCommitment}</p>
                 </div>
               </div>
-            ) : null}
-            <div className="info-grid">
-              <div>
-                <span className="muted-label">Who it is for</span>
-                <p>{selectedStudy.eligibilitySummary}</p>
-              </div>
-              <div>
-                <span className="muted-label">Requirements</span>
-                <p>{selectedStudy.requirements}</p>
-              </div>
-              <div>
-                <span className="muted-label">Location</span>
-                <p>{selectedStudy.locationLabel}</p>
-              </div>
-              <div>
-                <span className="muted-label">Time commitment</span>
-                <p>{selectedStudy.timeCommitment}</p>
-              </div>
-            </div>
-            <div className="button-row">
-              {studyView !== 'apply' ? (
-                <Button onClick={onApply}>Apply now</Button>
-              ) : (
-                <Button variant="secondary" onClick={onBackToList}>
-                  Close form
+              <div className="button-row">
+                <Button onClick={() => onApply(selectedStudy.id)}>
+                  Apply now
                 </Button>
-              )}
-            </div>
-          </Card>
+              </div>
+            </Card>
+          )
         ) : (
           <EmptyState
             title="No study selected"
@@ -800,6 +842,15 @@ function StudiesPanel({
               The clinic can now review your answers, ask for more
               information, or schedule a screening call.
             </p>
+            <div className="button-row">
+              <Button onClick={onBackToList}>Back to studies</Button>
+              <Button
+                variant="secondary"
+                onClick={onOpenApplications}
+              >
+                Open applications
+              </Button>
+            </div>
           </Card>
         ) : null}
       </div>

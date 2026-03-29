@@ -406,11 +406,30 @@ export async function createPatientApplication(
   draft: ApplicationDraft
 ): Promise<ActionResult> {
   const client = requireSupabase();
+  const trimmedAge = Number(draft.age);
+
+  if (
+    !draft.fullName.trim() ||
+    !draft.age.trim() ||
+    !draft.city.trim() ||
+    !draft.state.trim() ||
+    !draft.phone.trim() ||
+    !draft.condition.trim() ||
+    !draft.availability.trim() ||
+    !draft.motivation.trim() ||
+    Number.isNaN(trimmedAge)
+  ) {
+    return {
+      ok: false,
+      message: 'Complete the application before submitting it.',
+    };
+  }
+
   const payload = {
     study_id: studyId,
     auth_user_id: session.user.id,
     full_name: draft.fullName.trim(),
-    age: Number(draft.age),
+    age: trimmedAge,
     city: draft.city.trim(),
     state: draft.state.trim(),
     phone: draft.phone.trim(),
@@ -422,9 +441,11 @@ export async function createPatientApplication(
     status: 'submitted' as const,
   };
 
-  const { error } = await client
+  const { data, error } = await client
     .from('patient_applications')
-    .insert(payload);
+    .insert(payload)
+    .select('id')
+    .single();
 
   if (error) {
     return {
@@ -436,6 +457,7 @@ export async function createPatientApplication(
   return {
     ok: true,
     message: 'Application submitted.',
+    applicationId: (data as { id: string }).id,
   };
 }
 

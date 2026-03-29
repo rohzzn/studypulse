@@ -188,6 +188,7 @@ export type AuthSignInInput = {
 export type ActionResult = {
   ok: boolean;
   message: string;
+  applicationId?: string;
 };
 
 export const defaultApplicationDraft: ApplicationDraft = {

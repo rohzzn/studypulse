@@ -246,6 +246,7 @@ export function PatientFlowScreen({
   ) {
     setSelectedStudyId(studyId);
     setEditingApplicationId(existing?.id ?? null);
+    setSubmittedApplicationId(null);
     setApplicationStep(0);
     setStudyView('apply');
     setDraft(
@@ -286,6 +287,7 @@ export function PatientFlowScreen({
 
     if (editingApplicationId) {
       setSelectedApplicationId(editingApplicationId);
+      setApplicationStep(0);
       setStudyView('list');
       setApplicationView('detail');
       setActiveTab('applications');
@@ -298,6 +300,8 @@ export function PatientFlowScreen({
 
     setSubmittedApplicationId(result.applicationId ?? null);
     setSelectedApplicationId(result.applicationId ?? null);
+    setApplicationStep(0);
+    setEditingApplicationId(null);
     setStudyView('submitted');
     setDraft(buildDefaultDraft(accountProfile, patientEmail));
   }
