@@ -32,6 +32,8 @@ The product is designed around one core workflow:
 
 <div align="center">
   <img src="screenshots/5.png" width="45%" />
+  &nbsp;&nbsp;
+  <img src="screenshots/6.png" width="45%" />
 </div>
 
 ## Why StudyPulse
