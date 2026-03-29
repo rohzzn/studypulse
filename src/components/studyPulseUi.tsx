@@ -87,22 +87,38 @@ export function PillButton({
 }
 
 export function Field({
+  autoCapitalize = 'sentences',
+  editable = true,
+  keyboardType,
   label,
   onChangeText,
   placeholder,
+  secureTextEntry = false,
   value,
 }: {
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  editable?: boolean;
+  keyboardType?:
+    | 'default'
+    | 'email-address'
+    | 'numeric'
+    | 'phone-pad';
   label: string;
   onChangeText: (value: string) => void;
   placeholder: string;
+  secureTextEntry?: boolean;
   value: string;
 }) {
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
+        autoCapitalize={autoCapitalize}
+        editable={editable}
+        keyboardType={keyboardType}
         placeholder={placeholder}
         placeholderTextColor="#8FA0B2"
+        secureTextEntry={secureTextEntry}
         style={styles.fieldInput}
         value={value}
         onChangeText={onChangeText}

@@ -28,6 +28,7 @@ import type {
   PatientApplication,
   PatientApplicationDraft,
   ScreeningRequest,
+  StudyPulseProfile,
   StudyProgram,
 } from '../types/studypulse';
 
@@ -46,6 +47,9 @@ type StudyView =
 type ApplicationView = 'list' | 'detail';
 
 type PatientFlowScreenProps = {
+  accountMode: 'auth' | 'demo';
+  accountName?: string | null;
+  accountProfile?: StudyPulseProfile | null;
   applications: PatientApplication[];
   onClearSession: () => void;
   onRespondToRequest: (
@@ -65,6 +69,9 @@ type PatientFlowScreenProps = {
 };
 
 export function PatientFlowScreen({
+  accountMode,
+  accountName,
+  accountProfile,
   applications,
   onClearSession,
   onRespondToRequest,
@@ -95,7 +102,7 @@ export function PatientFlowScreen({
     patientEmail ?? ''
   );
   const [draft, setDraft] = useState<PatientApplicationDraft>(
-    defaultApplicationDraft
+    () => buildDefaultDraft(accountProfile, patientEmail)
   );
   const [requestResponses, setRequestResponses] = useState<
     Record<string, string>
@@ -191,7 +198,7 @@ export function PatientFlowScreen({
             availability: existing.availability,
             motivation: existing.motivation,
           }
-        : { ...defaultApplicationDraft }
+        : buildDefaultDraft(accountProfile, patientEmail)
     );
   }
 
@@ -219,14 +226,16 @@ export function PatientFlowScreen({
       setApplicationView('detail');
       setActiveTab('applications');
       setEditingApplicationId(null);
-      setDraft({ ...defaultApplicationDraft });
+      setDraft(
+        buildDefaultDraft(accountProfile, patientEmail)
+      );
       return;
     }
 
     setSubmittedApplicationId(result.applicationId ?? null);
     setSelectedApplicationId(result.applicationId ?? null);
     setStudyView('submitted');
-    setDraft({ ...defaultApplicationDraft });
+    setDraft(buildDefaultDraft(accountProfile, patientEmail));
   }
 
   async function handleRestore() {
@@ -355,6 +364,7 @@ export function PatientFlowScreen({
 
       return (
         <ApplicationListView
+          accountMode={accountMode}
           applications={applications}
           studies={studies}
           onOpen={(applicationId) => {
@@ -390,6 +400,8 @@ export function PatientFlowScreen({
 
     return (
       <ProfileView
+        accountMode={accountMode}
+        accountName={accountName ?? null}
         onClearSession={onClearSession}
         onRestore={handleRestore}
         patientEmail={patientEmail}
@@ -401,6 +413,9 @@ export function PatientFlowScreen({
     activeTab,
     applicationStep,
     applicationView,
+    accountMode,
+    accountName,
+    accountProfile,
     applications,
     draft,
     onClearSession,
@@ -591,7 +606,7 @@ function ApplicationFormView({
       <AppCard style={styles.cardGap}>
         <Text style={styles.sectionTitle}>{study.title}</Text>
         <Text style={styles.metaText}>
-          Step {step + 1} of 3 · {steps[step]}
+          Step {step + 1} of 3 | {steps[step]}
         </Text>
       </AppCard>
       <View style={styles.tabBar}>
@@ -617,6 +632,7 @@ function ApplicationFormView({
             />
             <Field
               label="Age"
+              keyboardType="numeric"
               placeholder="25"
               value={draft.age}
               onChangeText={(value) =>
@@ -633,6 +649,7 @@ function ApplicationFormView({
             />
             <Field
               label="State"
+              autoCapitalize="characters"
               placeholder="OH"
               value={draft.state}
               onChangeText={(value) =>
@@ -641,6 +658,7 @@ function ApplicationFormView({
             />
             <Field
               label="Phone"
+              keyboardType="phone-pad"
               placeholder="(555) 555-5555"
               value={draft.phone}
               onChangeText={(value) =>
@@ -648,6 +666,8 @@ function ApplicationFormView({
               }
             />
             <Field
+              autoCapitalize="none"
+              keyboardType="email-address"
               label="Email"
               placeholder="you@example.com"
               value={draft.email}
@@ -760,6 +780,7 @@ function SubmittedView({
 }
 
 function ApplicationListView({
+  accountMode,
   applications,
   onOpen,
   onRestore,
@@ -768,6 +789,7 @@ function ApplicationListView({
   setRestoreEmail,
   studies,
 }: {
+  accountMode: 'auth' | 'demo';
   applications: PatientApplication[];
   onOpen: (applicationId: string) => void;
   onRestore: () => void;
@@ -776,7 +798,7 @@ function ApplicationListView({
   setRestoreEmail: (value: string) => void;
   studies: StudyProgram[];
 }) {
-  if (!patientEmail) {
+  if (!patientEmail && accountMode === 'demo') {
     return (
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -787,6 +809,8 @@ function ApplicationListView({
             Restore my applications
           </Text>
           <Field
+            autoCapitalize="none"
+            keyboardType="email-address"
             label="Email"
             placeholder="you@example.com"
             value={restoreEmail}
@@ -806,7 +830,9 @@ function ApplicationListView({
       {applications.length === 0 ? (
         <AppCard>
           <Text style={styles.bodyText}>
-            No applications found for this email yet.
+            {accountMode === 'auth'
+              ? 'No applications yet. Apply to a study and it will show up here.'
+              : 'No applications found for this email yet.'}
           </Text>
         </AppCard>
       ) : (
@@ -878,7 +904,7 @@ function ApplicationDetailView({
         </View>
         <Text style={styles.metaText}>{study?.condition}</Text>
         <Text style={styles.bodyText}>
-          {application.fullName} · {application.email}
+          {application.fullName} | {application.email}
         </Text>
         {application.scheduledCallAt ? (
           <Text style={styles.requirementText}>
@@ -1056,12 +1082,16 @@ function RequestsView({
 }
 
 function ProfileView({
+  accountMode,
+  accountName,
   onClearSession,
   onRestore,
   patientEmail,
   restoreEmail,
   setRestoreEmail,
 }: {
+  accountMode: 'auth' | 'demo';
+  accountName: string | null;
   onClearSession: () => void;
   onRestore: () => void;
   patientEmail: string | null;
@@ -1074,23 +1104,44 @@ function ProfileView({
       showsVerticalScrollIndicator={false}
     >
       <AppCard style={styles.cardGap}>
-        <Text style={styles.sectionTitle}>Profile</Text>
-        <Text style={styles.bodyText}>
-          Current email: {patientEmail ?? 'None'}
+        <Text style={styles.sectionTitle}>
+          {accountMode === 'auth' ? 'Account' : 'Profile'}
         </Text>
-        <Field
-          label="Restore applications by email"
-          placeholder="you@example.com"
-          value={restoreEmail}
-          onChangeText={setRestoreEmail}
-        />
-        <PrimaryButton label="Restore" onPress={onRestore} />
-        {patientEmail ? (
-          <SecondaryButton
-            label="Clear saved email"
-            onPress={onClearSession}
-          />
-        ) : null}
+        {accountMode === 'auth' ? (
+          <>
+            <Text style={styles.bodyText}>
+              Signed in as {accountName ?? 'StudyPulse user'}
+            </Text>
+            <Text style={styles.bodyText}>
+              Email: {patientEmail ?? 'None'}
+            </Text>
+            <SecondaryButton
+              label="Sign out"
+              onPress={onClearSession}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.bodyText}>
+              Current email: {patientEmail ?? 'None'}
+            </Text>
+            <Field
+              autoCapitalize="none"
+              keyboardType="email-address"
+              label="Restore applications by email"
+              placeholder="you@example.com"
+              value={restoreEmail}
+              onChangeText={setRestoreEmail}
+            />
+            <PrimaryButton label="Restore" onPress={onRestore} />
+            {patientEmail ? (
+              <SecondaryButton
+                label="Clear saved email"
+                onPress={onClearSession}
+              />
+            ) : null}
+          </>
+        )}
       </AppCard>
     </ScrollView>
   );
@@ -1162,6 +1213,20 @@ function buildTimeline(
       ),
     })),
   ];
+}
+
+function buildDefaultDraft(
+  accountProfile?: StudyPulseProfile | null,
+  patientEmail?: string | null
+): PatientApplicationDraft {
+  return {
+    ...defaultApplicationDraft,
+    fullName: accountProfile?.fullName ?? '',
+    city: accountProfile?.city ?? '',
+    state: accountProfile?.state ?? '',
+    phone: accountProfile?.phone ?? '',
+    email: patientEmail ?? accountProfile?.email ?? '',
+  };
 }
 
 const styles = StyleSheet.create({

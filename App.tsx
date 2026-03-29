@@ -15,6 +15,7 @@ import {
   PrimaryButton,
 } from './src/components/studyPulseUi';
 import { useStudyPulseData } from './src/hooks/useStudyPulseData';
+import { AuthScreen } from './src/screens/AuthScreen';
 import { ClinicianFlowScreen } from './src/screens/ClinicianFlowScreen';
 import { PatientFlowScreen } from './src/screens/PatientFlowScreen';
 import { colors } from './src/theme/tokens';
@@ -25,14 +26,18 @@ import type {
 } from './src/types/studypulse';
 
 export default function App() {
-  const [role, setRole] =
+  const [demoRole, setDemoRole] =
     useState<StudyPulseRole>('landing');
+  const [allowDemoBypass, setAllowDemoBypass] =
+    useState(false);
   const [feedback, setFeedback] = useState<{
     message: string;
     tone: FeedbackTone;
   } | null>(null);
 
   const {
+    authConfigured,
+    authLoading,
     clearPatientSession,
     createRequest,
     createStudy,
@@ -42,17 +47,25 @@ export default function App() {
     patientApplications,
     patientEmail,
     patientRequests,
+    profile,
     refresh,
     refreshing,
     respondToRequest,
     restoreByEmail,
     saveNotes,
     saving,
+    scheduleCall,
+    session,
+    signIn,
+    signOut,
+    signUp,
     source,
     submitApplication,
     updateStatus,
-    scheduleCall,
   } = useStudyPulseData();
+
+  const authActive = authConfigured && !allowDemoBypass;
+  const activeRole = profile?.role ?? demoRole;
 
   async function withFeedback<T extends { ok: boolean; message: string }>(
     task: Promise<T>
@@ -62,11 +75,23 @@ export default function App() {
       message: result.message,
       tone: result.ok ? 'success' : 'warning',
     });
+
+    if (result.ok && session) {
+      setAllowDemoBypass(false);
+    }
+
     return result;
   }
 
   const shellCopy = useMemo(() => {
-    if (role === 'patient') {
+    if (authActive && !session) {
+      return {
+        title: 'StudyPulse',
+        subtitle: 'Sign in once and use the same account on mobile and web.',
+      };
+    }
+
+    if (activeRole === 'patient') {
       return {
         title: 'Patient Flow',
         subtitle:
@@ -74,7 +99,7 @@ export default function App() {
       };
     }
 
-    if (role === 'clinician') {
+    if (activeRole === 'clinician') {
       return {
         title: 'Clinician Flow',
         subtitle:
@@ -87,32 +112,50 @@ export default function App() {
       subtitle:
         'Clinical trial recruitment with one patient flow and one clinician flow.',
     };
-  }, [role]);
+  }, [activeRole, authActive, session]);
 
   const screen = useMemo(() => {
-    if (loading && !data) {
+    if ((loading && !data) || (authActive && authLoading)) {
       return (
         <View style={styles.loadingState}>
           <Text style={styles.loadingTitle}>
             Loading StudyPulse
           </Text>
           <Text style={styles.loadingBody}>
-            Pulling studies, applications, and clinic requests.
+            Preparing your account, studies, and application data.
           </Text>
         </View>
       );
     }
 
-    if (role === 'patient') {
+    if (authActive && (!session || !profile)) {
       return (
-        <PatientFlowScreen
-          applications={patientApplications}
-          onClearSession={() => {
-            clearPatientSession();
+        <AuthScreen
+          authConfigured={authConfigured}
+          busy={saving}
+          onOpenDemo={() => {
+            setAllowDemoBypass(true);
+            setDemoRole('landing');
             setFeedback({
-              message: 'Saved patient session removed.',
+              message: 'Demo mode enabled on this device.',
               tone: 'success',
             });
+          }}
+          onSignIn={(draft) => withFeedback(signIn(draft))}
+          onSignUp={(draft) => withFeedback(signUp(draft))}
+        />
+      );
+    }
+
+    if (activeRole === 'patient') {
+      return (
+        <PatientFlowScreen
+          accountMode={authActive ? 'auth' : 'demo'}
+          accountProfile={profile}
+          accountName={profile?.fullName ?? null}
+          applications={patientApplications}
+          onClearSession={() => {
+            void withFeedback(clearPatientSession());
           }}
           onRespondToRequest={(requestId, response) =>
             withFeedback(
@@ -135,11 +178,21 @@ export default function App() {
       );
     }
 
-    if (role === 'clinician') {
+    if (activeRole === 'clinician') {
       return (
         <ClinicianFlowScreen
           applications={data?.applications ?? []}
-          clinician={data?.clinician ?? null}
+          clinician={
+            profile
+              ? {
+                  email: profile.email,
+                  fullName: profile.fullName,
+                  id: profile.id,
+                  siteName: profile.siteName,
+                  title: profile.title,
+                }
+              : data?.clinician ?? null
+          }
           createRequest={(applicationId, draft) =>
             withFeedback(
               createRequest(applicationId, draft)
@@ -172,13 +225,16 @@ export default function App() {
 
     return (
       <ModeSelectScreen
-        onSelectClinician={() => setRole('clinician')}
-        onSelectPatient={() => setRole('patient')}
+        onSelectClinician={() => setDemoRole('clinician')}
+        onSelectPatient={() => setDemoRole('patient')}
         source={source}
       />
     );
   }, [
-    clearPatientSession,
+    activeRole,
+    authActive,
+    authConfigured,
+    authLoading,
     createRequest,
     createStudy,
     data,
@@ -186,17 +242,22 @@ export default function App() {
     patientApplications,
     patientEmail,
     patientRequests,
+    profile,
     refresh,
     refreshing,
     respondToRequest,
     restoreByEmail,
-    role,
-    saveNotes,
     saving,
     scheduleCall,
+    session,
+    clearPatientSession,
+    signIn,
+    signOut,
+    signUp,
     source,
     submitApplication,
     updateStatus,
+    saveNotes,
   ]);
 
   return (
@@ -223,9 +284,21 @@ export default function App() {
               ) : (
                 <Badge label="Demo" tone="warning" />
               )}
-              {role !== 'landing' ? (
+              {authActive && session ? (
                 <Pressable
-                  onPress={() => setRole('landing')}
+                  onPress={() => {
+                    void withFeedback(signOut());
+                  }}
+                  style={styles.homeButton}
+                >
+                  <Text style={styles.homeButtonText}>
+                    Sign out
+                  </Text>
+                </Pressable>
+              ) : null}
+              {!authActive && activeRole !== 'landing' ? (
+                <Pressable
+                  onPress={() => setDemoRole('landing')}
                   style={styles.homeButton}
                 >
                   <Text style={styles.homeButtonText}>
@@ -309,7 +382,7 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     paddingHorizontal: 18,
-    paddingTop: 14,
+    paddingTop: 10,
     paddingBottom: 18,
     gap: 12,
   },

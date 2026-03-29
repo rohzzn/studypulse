@@ -48,17 +48,17 @@ export function AuthScreen({
     if (role === 'clinician') {
       return {
         eyebrow: 'Clinician Portal',
-        title: 'Recruit, screen, and move patients forward.',
+        title: 'Review candidates and move trials forward.',
         body:
-          'Create studies, review applicants, ask for follow-up details, and schedule screening calls in one shared system.',
+          'Create studies, review applicants, request details, and schedule screening calls.',
       };
     }
 
     return {
       eyebrow: 'Patient Portal',
-      title: 'Find a trial and stay in sync with the clinic.',
+      title: 'Find a study and track your application.',
       body:
-        'Browse open studies, apply in minutes, reply to clinician requests, and track your status from one account.',
+        'Browse open studies, apply, reply to clinic requests, and follow your status from one account.',
     };
   }, [role]);
 
@@ -86,7 +86,7 @@ export function AuthScreen({
           <Card>
             <p className="eyebrow">Patient flow</p>
             <h3>Find study</h3>
-            <p>Apply, answer follow-ups, and track eligibility.</p>
+            <p>Apply, answer follow-ups, and track status.</p>
           </Card>
           <Card>
             <p className="eyebrow">Clinician flow</p>

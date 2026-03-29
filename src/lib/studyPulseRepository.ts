@@ -4,14 +4,18 @@ import {
 } from '../data/studypulseMockData';
 import { isSupabaseConfigured, supabase } from './supabase';
 import type {
+  AccountRole,
   ActionResult,
   ApplicationStatus,
+  AuthSignInDraft,
+  AuthSignUpDraft,
   ClinicianRequestDraft,
   PatientApplication,
   PatientApplicationDraft,
   ScheduleCallDraft,
   ScreeningRequest,
   StudyDraft,
+  StudyPulseProfile,
   StudyProgram,
   StudyPulseData,
   StudyPulseSource,
@@ -49,8 +53,21 @@ type ClinicianRow = {
   title: string;
 };
 
+type ProfileRow = {
+  city: string;
+  email: string;
+  full_name: string;
+  id: string;
+  phone: string;
+  role: AccountRole;
+  site_name: string;
+  state: string;
+  title: string;
+};
+
 type ApplicationRow = {
   age: number;
+  auth_user_id: string | null;
   availability: string | null;
   city: string;
   clinician_notes: string | null;
@@ -226,12 +243,27 @@ function mapClinicianRow(row: ClinicianRow) {
   };
 }
 
+function mapProfileRow(row: ProfileRow): StudyPulseProfile {
+  return {
+    id: row.id,
+    role: row.role,
+    email: row.email,
+    fullName: row.full_name,
+    phone: row.phone,
+    city: row.city,
+    state: row.state,
+    siteName: row.site_name,
+    title: row.title,
+  };
+}
+
 function mapApplicationRow(
   row: ApplicationRow
 ): PatientApplication {
   return {
     id: row.id,
     studyId: row.study_id,
+    authUserId: row.auth_user_id,
     fullName: row.full_name,
     age: row.age,
     city: row.city,
@@ -306,13 +338,15 @@ function buildStudyFromDraft(
 function buildApplicationFromDraft(
   draft: PatientApplicationDraft,
   studyId: string,
-  existing?: PatientApplication
+  existing?: PatientApplication,
+  authUserId?: string | null
 ): PatientApplication {
   const timestamp = nowIso();
 
   return {
     id: existing?.id ?? `app-${Date.now()}`,
     studyId,
+    authUserId: existing?.authUserId ?? authUserId ?? null,
     fullName: draft.fullName.trim(),
     age: Number(draft.age),
     city: draft.city.trim(),
@@ -358,6 +392,129 @@ export function writeStoredPatientEmail(
   globalThis.localStorage.removeItem(LOCAL_PATIENT_EMAIL_KEY);
 }
 
+export async function fetchStudyPulseProfile(
+  userId: string
+): Promise<StudyPulseProfile | null> {
+  if (!isSupabaseConfigured || !supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select(
+      'id, role, email, full_name, phone, city, state, site_name, title'
+    )
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ? mapProfileRow(data as ProfileRow) : null;
+}
+
+export async function signInStudyPulseAccount(
+  draft: AuthSignInDraft
+): Promise<ActionResult> {
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      ok: false,
+      message: 'Supabase Auth is not configured.',
+    };
+  }
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email: draft.email.trim().toLowerCase(),
+    password: draft.password,
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      message: error.message,
+    };
+  }
+
+  return {
+    ok: true,
+    message: 'Signed in.',
+  };
+}
+
+export async function signUpStudyPulseAccount(
+  draft: AuthSignUpDraft
+): Promise<ActionResult> {
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      ok: false,
+      message: 'Supabase Auth is not configured.',
+    };
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: draft.email.trim().toLowerCase(),
+    password: draft.password,
+    options: {
+      data: {
+        role: draft.role,
+        full_name: draft.fullName.trim(),
+        phone: draft.phone.trim(),
+        city: draft.city.trim(),
+        state: draft.state.trim(),
+        site_name: draft.siteName.trim(),
+        title: draft.title.trim(),
+      },
+    },
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      message: error.message,
+    };
+  }
+
+  if (!data.session) {
+    return {
+      ok: true,
+      message:
+        'Account created. Check your email to confirm it, then sign in.',
+    };
+  }
+
+  return {
+    ok: true,
+    message: 'Account created and signed in.',
+  };
+}
+
+export async function signOutStudyPulseAccount(): Promise<ActionResult> {
+  if (!isSupabaseConfigured || !supabase) {
+    writeStoredPatientEmail(null);
+    return {
+      ok: true,
+      message: 'Signed out.',
+    };
+  }
+
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    return {
+      ok: false,
+      message: error.message,
+    };
+  }
+
+  writeStoredPatientEmail(null);
+
+  return {
+    ok: true,
+    message: 'Signed out.',
+  };
+}
+
 export async function loadStudyPulseData(): Promise<LoadResult> {
   if (!isSupabaseConfigured || !supabase) {
     return {
@@ -385,7 +542,7 @@ export async function loadStudyPulseData(): Promise<LoadResult> {
         supabase
           .from('patient_applications')
           .select(
-            'id, study_id, full_name, age, city, state, phone, email, condition, current_medications, availability, motivation, status, clinician_notes, scheduled_call_at, scheduled_call_reason, last_status_at, created_at, updated_at'
+            'id, study_id, auth_user_id, full_name, age, city, state, phone, email, condition, current_medications, availability, motivation, status, clinician_notes, scheduled_call_at, scheduled_call_reason, last_status_at, created_at, updated_at'
           )
           .order('updated_at', { ascending: false }),
         supabase
@@ -457,10 +614,17 @@ export async function savePatientApplication(
     };
   }
 
+  const currentAuthUserId =
+    isSupabaseConfigured && supabase
+      ? (await supabase.auth.getSession()).data.session?.user.id ??
+        null
+      : null;
+
   const nextApplication = buildApplicationFromDraft(
     draft,
     studyId,
-    existing
+    existing,
+    currentAuthUserId
   );
 
   if (!isSupabaseConfigured || !supabase) {
@@ -491,6 +655,7 @@ export async function savePatientApplication(
 
   const payload = {
     study_id: studyId,
+    auth_user_id: nextApplication.authUserId,
     full_name: nextApplication.fullName,
     age: nextApplication.age,
     city: nextApplication.city,

@@ -119,6 +119,7 @@ export const mockApplications: PatientApplication[] = [
   {
     id: 'app-riley',
     studyId: 'study-heart',
+    authUserId: null,
     fullName: 'Riley Carter',
     age: 24,
     city: 'Cincinnati',
@@ -142,6 +143,7 @@ export const mockApplications: PatientApplication[] = [
   {
     id: 'app-jordan',
     studyId: 'study-heart',
+    authUserId: null,
     fullName: 'Jordan Kim',
     age: 29,
     city: 'Lexington',
@@ -164,6 +166,7 @@ export const mockApplications: PatientApplication[] = [
   {
     id: 'app-morgan',
     studyId: 'study-migraine',
+    authUserId: null,
     fullName: 'Morgan Lee',
     age: 31,
     city: 'Columbus',

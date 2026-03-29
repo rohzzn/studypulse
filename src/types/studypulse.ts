@@ -3,6 +3,8 @@ export type StudyPulseRole =
   | 'patient'
   | 'clinician';
 
+export type AccountRole = 'patient' | 'clinician';
+
 export type StudyPulseSource = 'demo' | 'supabase';
 
 export type FeedbackTone = 'success' | 'warning';
@@ -74,8 +76,21 @@ export type ClinicianProfile = {
   title: string;
 };
 
+export type StudyPulseProfile = {
+  city: string;
+  email: string;
+  fullName: string;
+  id: string;
+  phone: string;
+  role: AccountRole;
+  siteName: string;
+  state: string;
+  title: string;
+};
+
 export type PatientApplication = {
   age: number;
+  authUserId: string | null;
   availability: string;
   city: string;
   clinicianNotes: string;
@@ -130,6 +145,23 @@ export type ClinicianRequestDraft = {
 export type ScheduleCallDraft = {
   note: string;
   scheduledFor: string;
+};
+
+export type AuthSignInDraft = {
+  email: string;
+  password: string;
+};
+
+export type AuthSignUpDraft = {
+  city: string;
+  email: string;
+  fullName: string;
+  password: string;
+  phone: string;
+  role: AccountRole;
+  siteName: string;
+  state: string;
+  title: string;
 };
 
 export type StudyPulseData = {

@@ -184,10 +184,7 @@ export function ClinicianPortal({
         <div>
           <p className="eyebrow">Clinician portal</p>
           <h1>{profile.siteName || 'StudyPulse Research Network'}</h1>
-          <p>
-            Publish studies, review candidates, request follow-up
-            details, and schedule screening calls.
-          </p>
+          <p>Publish studies, review applicants, and move screening forward.</p>
         </div>
         <div className="hero-metrics">
           <Card>

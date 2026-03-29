@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 
-import { supabase } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   createScreeningRequest,
   createStudy,
+  fetchStudyPulseProfile,
   loadStudyPulseData,
   readStoredPatientEmail,
   respondToRequest,
@@ -11,18 +13,24 @@ import {
   saveClinicianNotes,
   savePatientApplication,
   scheduleCall,
+  signInStudyPulseAccount,
+  signOutStudyPulseAccount,
+  signUpStudyPulseAccount,
   updateApplicationStatus,
   writeStoredPatientEmail,
 } from '../lib/studyPulseRepository';
 import type {
   ActionResult,
   ApplicationStatus,
+  AuthSignInDraft,
+  AuthSignUpDraft,
   ClinicianRequestDraft,
   PatientApplication,
   PatientApplicationDraft,
   ScheduleCallDraft,
   StudyDraft,
   StudyPulseData,
+  StudyPulseProfile,
   StudyPulseSource,
 } from '../types/studypulse';
 
@@ -33,10 +41,15 @@ export function useStudyPulseData() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [authLoading, setAuthLoading] = useState(
+    isSupabaseConfigured
+  );
   const [error, setError] = useState<string | null>(null);
-  const [patientEmail, setPatientEmailState] = useState<
-    string | null
-  >(() => readStoredPatientEmail());
+  const [storedPatientEmail, setStoredPatientEmailState] =
+    useState<string | null>(() => readStoredPatientEmail());
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] =
+    useState<StudyPulseProfile | null>(null);
 
   async function syncData(isRefresh = false) {
     if (isRefresh) {
@@ -62,9 +75,88 @@ export function useStudyPulseData() {
     }
   }
 
+  function setStoredPatientEmail(email: string | null) {
+    writeStoredPatientEmail(email);
+    setStoredPatientEmailState(email);
+  }
+
   useEffect(() => {
     void syncData();
   }, []);
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthLoading(false);
+      return;
+    }
+
+    let active = true;
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!active) {
+        return;
+      }
+
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !session) {
+      setProfile(null);
+      return;
+    }
+
+    let active = true;
+    setAuthLoading(true);
+
+    void fetchStudyPulseProfile(session.user.id)
+      .then((nextProfile) => {
+        if (!active) {
+          return;
+        }
+
+        setProfile(nextProfile);
+
+        if (nextProfile?.email) {
+          setStoredPatientEmail(nextProfile.email);
+        }
+      })
+      .catch((profileError) => {
+        if (!active) {
+          return;
+        }
+
+        setProfile(null);
+        setError(
+          profileError instanceof Error
+            ? profileError.message
+            : 'Unable to load account profile.'
+        );
+      })
+      .finally(() => {
+        if (active) {
+          setAuthLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session?.user.id]);
 
   useEffect(() => {
     const client = supabase;
@@ -115,18 +207,42 @@ export function useStudyPulseData() {
     };
   }, []);
 
-  function setPatientEmail(email: string | null) {
-    writeStoredPatientEmail(email);
-    setPatientEmailState(email);
-  }
+  const patientIdentity = useMemo(() => {
+    if (session?.user.id && profile?.email) {
+      return {
+        authUserId: session.user.id,
+        email: profile.email.toLowerCase(),
+      };
+    }
+
+    if (storedPatientEmail) {
+      return {
+        authUserId: null,
+        email: storedPatientEmail.toLowerCase(),
+      };
+    }
+
+    return null;
+  }, [profile?.email, session?.user.id, storedPatientEmail]);
 
   const patientApplications =
-    data?.applications.filter(
-      (application) =>
-        patientEmail !== null &&
+    data?.applications.filter((application) => {
+      if (!patientIdentity) {
+        return false;
+      }
+
+      if (
+        patientIdentity.authUserId &&
+        application.authUserId === patientIdentity.authUserId
+      ) {
+        return true;
+      }
+
+      return (
         application.email.toLowerCase() ===
-          patientEmail.toLowerCase()
-    ) ?? [];
+        patientIdentity.email
+      );
+    }) ?? [];
 
   const patientRequests =
     data?.requests.filter((request) =>
@@ -145,7 +261,7 @@ export function useStudyPulseData() {
 
       if (result.ok) {
         if (result.patientEmail !== undefined) {
-          setPatientEmail(result.patientEmail);
+          setStoredPatientEmail(result.patientEmail);
         }
 
         await syncData(true);
@@ -158,18 +274,36 @@ export function useStudyPulseData() {
   }
 
   return {
+    authConfigured: isSupabaseConfigured,
+    authLoading,
     data,
     error,
     loading,
     patientApplications,
-    patientEmail,
+    patientEmail: profile?.email ?? storedPatientEmail,
     patientRequests,
+    profile,
     refresh: () => syncData(true),
     refreshing,
     saving,
-    setPatientEmail,
-    clearPatientSession: () => setPatientEmail(null),
+    session,
     source,
+    clearPatientSession: () =>
+      isSupabaseConfigured && supabase
+        ? runAction(() => signOutStudyPulseAccount())
+        : Promise.resolve({
+            ok: true,
+            message: 'Session cleared.',
+          }).then((result) => {
+            setStoredPatientEmail(null);
+            return result;
+          }),
+    signIn: (draft: AuthSignInDraft) =>
+      runAction(() => signInStudyPulseAccount(draft)),
+    signOut: () =>
+      runAction(() => signOutStudyPulseAccount()),
+    signUp: (draft: AuthSignUpDraft) =>
+      runAction(() => signUpStudyPulseAccount(draft)),
     submitApplication: (
       draft: PatientApplicationDraft,
       studyId: string,

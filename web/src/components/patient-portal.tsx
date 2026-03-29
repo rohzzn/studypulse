@@ -226,11 +226,8 @@ export function PatientPortal({
       <section className="portal-hero">
         <div>
           <p className="eyebrow">Patient portal</p>
-          <h1>Welcome back, {profile.fullName || 'Patient'}.</h1>
-          <p>
-            Browse studies, apply once, and stay synced with the
-            clinic.
-          </p>
+          <h1>{profile.fullName || 'Patient'}</h1>
+          <p>Browse studies, apply, and respond to clinic updates.</p>
         </div>
         <div className="hero-metrics">
           <Card>
