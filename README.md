@@ -12,6 +12,17 @@ The product is designed around one core workflow:
 
 **Find study -> Apply -> Review -> Request info -> Update status -> Schedule call**
 
+## Screenshots
+
+<div align="center">
+
+| | | |
+|:---:|:---:|:---:|
+| <img src="screenshots/1.png" width="220"/> | <img src="screenshots/2.png" width="220"/> | <img src="screenshots/3.png" width="220"/> |
+| <img src="screenshots/4.png" width="220"/> | <img src="screenshots/5.png" width="220"/> | |
+
+</div>
+
 ## Why StudyPulse
 
 Clinical trial recruitment is often slow, manual, and fragmented. Patients do not always know which studies fit them, and coordinators spend too much time reviewing incomplete applications and chasing missing information.
